@@ -4,6 +4,7 @@ import threading
 from logging.handlers import RotatingFileHandler
 from AppConfiguration import AppConfig
 from datetime import datetime, timedelta
+from prettytable import PrettyTable
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,7 @@ class FrigateEventProcessor:
         self.event_process_timer = dict()
         self.alert_publish_func = alert_publish_func
 
+
     def process_event(self, event):
 
         type = event.get('type')
@@ -29,6 +31,13 @@ class FrigateEventProcessor:
         elif type == "end":
             self.process_end_event(before)
 
+    """
+    Cancel any pending timers queued
+    """
+    def clear_pending_notifications(self):
+        for index, (key, value) in enumerate(self.event_process_timer.items()):
+            value.cancel()
+        self.event_process_timer.clear()
         
     """
     Indicates a new event has started
@@ -223,6 +232,18 @@ class FrigateEventProcessor:
             handler.setFormatter(formatter)
             logging.getLogger().addHandler(handler)
 
+    """
+    Print a table of ongoing events to the console
+    """
+    def print_ongoing_events(self):
+        table = PrettyTable()
+        table.field_names = ["ID", "Camera", "Zones", "Label", "SubLabel", "Score", "Duration"]
+
+        for index, (key, event) in enumerate(self.ongoing_events.items()):
+            table.add_row([key, event.camera, ", ".join(event.current_zones), event.label, event.sub_label, "{:.2f}".format(event.score), event.duration])
+
+        logger.info("\n"+str(table))
+
 class Notification:
     def __init__(self):
         self.group = None
@@ -266,6 +287,10 @@ class EventData:
         self.has_clip = data.get('has_clip', False)
         self.has_snapshot = data.get('has_snapshot', False)
     
-
+    @property
+    def duration(self):
+        started = datetime.fromtimestamp(self.start_time)
+        delta = datetime.now() - started
+        return str(delta)
         
     

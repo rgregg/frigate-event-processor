@@ -50,8 +50,27 @@ class MqttEventReceiver:
         topic = self.config.mqtt.listen_topic
         logger.info(f"Subscribing to topic {topic}")
         client.subscribe(topic)
-        
-        # Blocking call that processes network traffic, dispatches callbacks, and handles reconnecting.
-        client.loop_forever()
 
+        # Starts processing the loop on another thread        
+        client.loop_start()
 
+        loop = True
+        while loop:
+            # get user input and respond
+            try:
+                command = input("")
+                if command.lower() == "p":
+                    self.processor.print_ongoing_events()
+                elif command.lower() == "q":
+                    loop = False
+            except KeyboardInterrupt:
+                logger.info("App received signal to shudown.")
+                loop = False
+
+        logger.info("Shutting down...")
+
+        client.loop_stop()
+        client.disconnect()
+        self.processor.clear_pending_notifications()
+
+        logger.info("Disconnected.")
