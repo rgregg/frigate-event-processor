@@ -13,7 +13,8 @@ logger = logging.getLogger(__name__)
 class MqttEventReceiver:
     def __init__(self, config:AppConfig):
         self.config = config
-        self.processor = FrigateEventProcessor(config)
+        self.processor = FrigateEventProcessor(config, self.publish_message)
+        self.mqtt_client = None
 
     # Callback when the client receives a message from the server.
     def on_message(self, client, userdata, msg):
@@ -30,6 +31,9 @@ class MqttEventReceiver:
         except json.JSONDecodeError:
             logger.warning(f"Failed to decode message as JSON from topic {msg.topic}: {message}")
 
+    def publish_message(self, topic, value):
+        client = self.mqtt_client
+        client.publish(topic, value)
 
     # Function to connect to the broker and subscribe to the topic
     def connect_and_loop(self):
@@ -41,9 +45,9 @@ class MqttEventReceiver:
 
         logger.info(f"Connecting to broker {broker}:{port}")
         client.connect(broker, port, 60)
-        
+        self.mqtt_client = client
 
-        topic = self.config.mqtt.topic
+        topic = self.config.mqtt.listen_topic
         logger.info(f"Subscribing to topic {topic}")
         client.subscribe(topic)
         

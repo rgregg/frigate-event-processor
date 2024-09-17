@@ -1,16 +1,22 @@
 import logging
 import json
+import threading
 from logging.handlers import RotatingFileHandler
 from AppConfiguration import AppConfig
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
 class FrigateEventProcessor:
-    def __init__(self, config: AppConfig):
+    def __init__(self, config: AppConfig, alert_publish_func):
         self.ongoing_events = dict()
         self.config = config
-        self.cameras = {alert.camera: alert for alert in self.config.alerts}
         self.configure_logging()
+        self.cameras = {alert.camera: alert for alert in self.config.alerts}
+        self.camera_notification_history = dict()
+        self.label_notification_history = dict()
+        self.event_process_timer = dict()
+        self.alert_publish_func = alert_publish_func
 
     def process_event(self, event):
 
@@ -18,10 +24,8 @@ class FrigateEventProcessor:
         before = event.get('before')
         after = event.get('after')
 
-        if type == "new":
-            self.process_new_event(after)
-        elif type == "update":
-            self.process_update_event(after)
+        if type == "new" or type == "update":
+            self.process_event_data(after, type.upper())
         elif type == "end":
             self.process_end_event(before)
 
@@ -29,27 +33,36 @@ class FrigateEventProcessor:
     """
     Indicates a new event has started
     """
-    def process_new_event(self, data):
+    def process_event_data(self, data, tag):
         event = EventData(data)
         self.ongoing_events[event.id] = event
-        logger.info(f"NEW: {event.id}, camera={event.camera}, label={event.label}, score={event.score}")
-        if self.evaluate_alert(None, event):
-            alert = self.generate_notification_json(event)
-            logger.info(f"ALERT: {json.dumps(alert)}")
+        logger.info(f"{tag}: {event.id}, camera={event.camera}, label={event.label}, score={event.score}")
 
-    """
-    Indicates information has been updated about an 
-    event that we have already seen (probably...)
-    """
-    def process_update_event(self, data):
-        event = EventData(data)
-        logger.info(f"UPD: {event.id}, camera={event.camera}, label={event.label}, score={event.score}")
+        # check to see if we need to delay processing of this event
+        if self.config.alert_rules.minimum_duration_seconds > 0:            
+            event_start_time =  datetime.fromtimestamp(event.start_time)
+            if event_start_time + timedelta(seconds=self.config.alert_rules.minimum_duration_seconds) > datetime.now():
+                # queue this event for future processing
+                event_id = event.id
+                previous_timer = self.event_process_timer.get(event_id)
+                if previous_timer is None:
+                    logger.info(F"Queuing processing of event {event_id} for min duration {self.config.alert_rules.minimum_duration_seconds}")
+                    timer = threading.Timer(self.config.alert_rules.minimum_duration_seconds, self.process_event_for_alert, args=(event))
+                    self.event_process_timer[event_id] = timer
+                    timer.start()
+                    return
+                # TODO: if we already have a timer - we drop this event (which means we may not have the latest data for the alert...)
 
+        self.process_event_for_alert(event)
+
+    def process_event_for_alert(self, event):
+        logger.info(F"Processing {event.id} for alert")
         previous = self.ongoing_events.get(event.id)
-        self.ongoing_events[event.id] = event
         if self.evaluate_alert(previous, event):
             alert = self.generate_notification_json(event)
-            logger.info(f"ALERT: {alert}")
+            alert_payload = json.dumps(alert)
+            logger.info(f"ALERT: {alert_payload}")
+            self.alert_publish_func(self.config.mqtt.alert_topic, alert_payload)
 
 
     """
@@ -58,6 +71,13 @@ class FrigateEventProcessor:
     """
     def process_end_event(self, data):
         id = data.get('id')
+        
+        previous_timer = self.event_process_timer.get(id)
+        if previous_timer is not None:
+            previous_timer.cancel()
+            del self.event_process_timer[id]
+            logger.info(F"Cancelling processing of {id} since it ended before the min_duration")
+
         del self.ongoing_events[id]
         logger.info(f"DEL: {id}")
 
@@ -89,27 +109,67 @@ class FrigateEventProcessor:
         
         # is the alert enabled or disabled
         if alert_config.enabled == False:
-            logger.info(f"Alert for {after.id} (camera={after.camera}) was disabled in configuration")
+            logger.info(f"Event {after.id} (camera={after.camera}) was disabled in configuration")
             return False
 
         # is the alert for an expected object type (label)
         if not after.label in alert_config.objects:
-            logger.info(f"Alert for {after.id} (camera={after.camera}, label={after.label}) was not included in configuration")
+            logger.info(f"Event {after.id} (camera={after.camera}, label={after.label}) was not included in configuration")
             return False
         
         # is the event including a required zone?
         required_zones = alert_config.zones.get('required', [])
         if len(required_zones) > 0 and len(set(required_zones) & set(after.current_zones)) == 0:
-            logger.info(f"Alert for {after.id} (camera={after.camera}, label={after.label}, current_zones={after.current_zones}) was not in a required zone")
+            logger.info(f"Event {after.id} (camera={after.camera}, label={after.label}, current_zones={after.current_zones}) was not in a required zone")
             return False
         
         # is the event in an ignored zone?
         ignored_zones = alert_config.zones.get('ignored', [])
         if len(ignored_zones) > 0 and len(set(ignored_zones) & set(after.current_zones)) == 0:
-            logger.info(f"Alert for {after.id} (camera={after.camera}, label={after.label}, current_zones={after.current_zones}) was in an ignored zone")
+            logger.info(f"Event {after.id} (camera={after.camera}, label={after.label}, current_zones={after.current_zones}) was in an ignored zone")
             return False
         
+        # does the event have required parameters
+        if self.config.alert_rules.require_snapshot and after.has_snapshot == False:
+            logger.info(f"Event {after.id} (camera={after.camera}, label={after.label}) has no snapshot and was dropped")
+            return False
+        if self.config.alert_rules.require_video and after.has_video == False:
+            logger.info(f"Event {after.id} (camera={after.camera}, label={after.label}) has no video clip and was dropped")
+            return False
+        
+        # check to see if we're still in the event cooldown for the camera
+        if not self.is_event_past_cooldown(after):
+            logger.info(f"Event {after.id} (camera={after.camera}, label={after.label}) was still in cooldown and was skipped")
+            return False
+                
         return True
+    
+    def is_event_past_cooldown(self, event):
+        cooldown = self.config.alert_rules.cooldown
+
+        # If both camera and label cooldowns are 0, always return True
+        if cooldown.camera_duration_seconds == 0 and cooldown.label_duration_seconds == 0:
+            return True
+
+        # Helper function to check cooldown expiration
+        def is_past_cooldown(previous_notification, duration_seconds):
+            if previous_notification is None or duration_seconds == 0:
+                return True
+            delta = timedelta(seconds=duration_seconds)
+            return previous_notification.timestamp < (datetime.now() - delta)
+
+        # Check camera cooldown
+        camera_notification = self.camera_notification_history.get(event.camera)
+        if not is_past_cooldown(camera_notification, cooldown.camera_duration_seconds):
+            return False
+
+        # Check label cooldown
+        label_notification = self.label_notification_history.get(self.camera_and_label_key(event))
+        if not is_past_cooldown(label_notification, cooldown.label_duration_seconds):
+            return False
+
+        return True
+
 
     def generate_notification_json(self, event):
         camera = event.camera.replace("_", " ").title()
@@ -123,7 +183,13 @@ class FrigateEventProcessor:
             notification.image = self.config.frigate.api_base_url + f"/events/{event.id}/thumbnail.jpg"
         if event.has_clip:
             notification.video = self.config.frigate.api_base_url + f"/events/{event.id}/clip.mp4"
+
+        self.camera_notification_history[event.camera] = notification
+        self.label_notification_history[self.camera_and_label_key(event)] = notification
         return json.dumps(notification.to_dict())
+    
+    def camera_and_label_key(self, event):
+        return f"{event.camera}__{event.label}"
 
     def generate_detection_string(self, event):
         output = event.label.replace("_", " ").title()  # "Person"
@@ -164,6 +230,7 @@ class Notification:
         self.message = None
         self.image = None
         self.video = None
+        self.timestamp = datetime.now()
     # Method to convert the Notification object to a dictionary
     def to_dict(self):
         return {

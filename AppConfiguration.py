@@ -15,10 +15,11 @@ class MqttConfig:
         self.port = 1883
         self.username = None
         self.password = None
-        self.topic = "#"
+        self.listen_topic = "#"
+        self.alert_topic = "alerts/camera_system"
 
     def __repr__(self):
-        return f"Mqtt(host={self.host}, username={self.username}, password={self.password}, topic={self.topic})"
+        return f"Mqtt(host={self.host}, username={self.username}, password={self.password}, listen_topic={self.listen_topic}, alert_topic={self.alert_topic})"
 
 class FrigateConfig:
     def __init__(self):
@@ -30,6 +31,9 @@ class FrigateConfig:
     def api_base_url(self):
         protocol = "https" if self.use_ssl else "http"
         return f"{protocol}://{self.host}:{self.port}/api"
+    
+    def __repr__(self):
+        return f"Frigate(url={self.api_base_url})"
 
 class AlertConfig:
     def __init__(self, camera):
@@ -43,18 +47,21 @@ class AlertConfig:
 
 class CooldownConfig:
     def __init__(self):
-        self.camera = "0"
-        self.object = "0"
+        self.camera_duration_seconds = 0
+        self.label_duration_seconds = 0
 
     def __repr__(self):
-        return f"Cooldown(camera={self.camera}, object={self.object})"
+        return f"Cooldown(camera={self.camera_duration_seconds}, object={self.label_duration_seconds})"
 
-class SnapshotConfig:
+class AlertRulesConfig:
     def __init__(self):
-        self.required = False
+        self.minimum_duration_seconds = 0
+        self.require_snapshot = False
+        self.require_video = False
+        self.cooldown = CooldownConfig()
 
     def __repr__(self):
-        return f"Snapshots(required={self.required})"
+        return f"AlertRules(min_dur={self.minimum_duration_seconds}s, snapshots={self.require_snapshot}, video={self.require_video}, cooldown={self.cooldown})"
 
 class ObjectTrackingConfig:
     def __init__(self):
@@ -75,8 +82,7 @@ class AppConfig:
         self.mqtt = MqttConfig()
         self.frigate = FrigateConfig()
         self.alerts = []
-        self.cooldown = CooldownConfig()
-        self.snapshots = SnapshotConfig()
+        self.alert_rules = AlertRulesConfig()
         self.object_tracking = ObjectTrackingConfig()
         self.logging = LoggingConfig()
 
@@ -86,7 +92,8 @@ class AppConfig:
         if mqtt is not None:
             self.mqtt.host = mqtt.get('host') or "localhost"
             self.mqtt.port = mqtt.get('port') or 1883
-            self.mqtt.topic = mqtt.get('topic') or "#"
+            self.mqtt.listen_topic = mqtt.get('listen_topic') or "#"
+            self.mqtt.alert_topic = mqtt.get('alert_topic') or "alerts/camera_system"
             self.mqtt.username = mqtt.get('username')
             self.mqtt.password = mqtt.get('password')
 
@@ -107,21 +114,21 @@ class AppConfig:
             new_alert.zones = alert.get('zones') or {}
             self.alerts.append(new_alert)
 
-        # Parse cooldown
-        cooldown = data.get('cooldown')
-        if cooldown is not None:
-            self.cooldown.camera = self.parse_duration(cooldown.get('camera') or "60s")
-            self.cooldown.object = self.parse_duration(cooldown.get('object') or "60s")
+        # Parse alert_rules
+        rules = data.get('alert_rules')
+        if rules is not None:
+            self.alert_rules.minimum_duration_seconds = self.parse_duration(rules.get('min_event_duration', "0s"))
+            self.alert_rules.require_snapshot = rules.get('snapshot', False)
+            self.alert_rules.require_video = rules.get('video', False)
+
+            cooldown = rules.get('cooldown')
+            if cooldown is not None:
+                self.alert_rules.cooldown.camera_duration_seconds = self.parse_duration(cooldown.get('camera', "0s"))
+                self.alert_rules.cooldown.label_duration_seconds = self.parse_duration(cooldown.get('label', "0s"))
         else:
-            self.cooldown.camera = 60
-            self.cooldown.object = 60
+            self.alert_rules.cooldown.camera_duration_seconds = 0
+            self.alert_rules.cooldown.label_duration_seconds = 0
         
-        # Parse snapshots
-        snapshots = data.get('snapshots')
-        if snapshots is not None:
-            self.snapshots.required = snapshots.get('required')
-        else:
-            self.snapshots.required = False
         
         # Parse object tracking
         tracking = data.get('object_tracking')
