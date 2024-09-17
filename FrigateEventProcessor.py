@@ -49,7 +49,7 @@ class FrigateEventProcessor:
         self.ongoing_events[event.id] = event
         if self.evaluate_alert(previous, event):
             alert = self.generate_notification_json(event)
-            logger.info(f"ALERT: {json.dumps(alert)}")
+            logger.info(f"ALERT: {alert}")
 
 
     """
