@@ -4,6 +4,7 @@ import time
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from pathlib import Path
+import re
 
 # Define the classes to map the structure
 logger = logging.getLogger(__name__)
@@ -109,19 +110,25 @@ class AppConfig:
         # Parse cooldown
         cooldown = data.get('cooldown')
         if cooldown is not None:
-            self.cooldown.camera = cooldown.get('camera') or "60s"
-            self.cooldown.object = cooldown.get('object') or "60s"
-    
+            self.cooldown.camera = self.parse_duration(cooldown.get('camera') or "60s")
+            self.cooldown.object = self.parse_duration(cooldown.get('object') or "60s")
+        else:
+            self.cooldown.camera = 60
+            self.cooldown.object = 60
         
         # Parse snapshots
         snapshots = data.get('snapshots')
         if snapshots is not None:
             self.snapshots.required = snapshots.get('required')
+        else:
+            self.snapshots.required = False
         
         # Parse object tracking
         tracking = data.get('object_tracking')
         if tracking is not None:
             self.object_tracking.enabled = tracking.get('enabled')
+        else:
+            self.object_tracking.enabled = True
 
         # Parse logger
         logging = data.get('logging')
@@ -134,6 +141,27 @@ class AppConfig:
     def __repr__(self):
         return (f"Config(mqtt={self.mqtt}, alerts={self.alerts}, cooldown={self.cooldown}, "
                 f"snapshots={self.snapshots}, object_tracking={self.object_tracking})")
+    
+    def parse_duration(self, duration_str):
+        # Define regex pattern to capture number and unit (s = seconds, m = minutes, h = hours)
+        pattern = r'(\d+)([smh])'
+        match = re.match(pattern, duration_str)
+        
+        if not match:
+            raise ValueError(f"Invalid duration format: {duration_str}")
+        
+        value, unit = match.groups()
+        value = int(value)
+        
+        if unit == 's':  # seconds
+            return value
+        elif unit == 'm':  # minutes to seconds
+            return value * 60
+        elif unit == 'h':  # hours to seconds
+            return value * 3600
+        else:
+            raise ValueError(f"Unsupported time unit: {unit}")
+
 
 class FileBasedAppConfig(AppConfig):
     def __init__(self, config_file, watch_for_changes = True):
