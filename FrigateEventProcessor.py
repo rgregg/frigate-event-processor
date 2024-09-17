@@ -78,7 +78,7 @@ class FrigateEventProcessor:
                 (before.has_snapshot != after.has_snapshot and after.has_snapshot == True))
 
         if not is_significant:
-            logger.debug(f"Event update for {before.id} was not significant and was discarded.")
+            logger.info(f"Event update for {before.id} was not significant and was discarded.")
             return False
         
         # check to see if this event meets the configuration criteria for this camera
@@ -89,24 +89,24 @@ class FrigateEventProcessor:
         
         # is the alert enabled or disabled
         if alert_config.enabled == False:
-            logger.debug(f"Alert for {after.id} (camera={after.camera}) was disabled in configuration")
+            logger.info(f"Alert for {after.id} (camera={after.camera}) was disabled in configuration")
             return False
 
         # is the alert for an expected object type (label)
         if not after.label in alert_config.objects:
-            logger.debug(f"Alert for {after.id} (camera={after.camera}, label={after.label}) was not included in configuration")
+            logger.info(f"Alert for {after.id} (camera={after.camera}, label={after.label}) was not included in configuration")
             return False
         
         # is the event including a required zone?
         required_zones = alert_config.zones.get('required', [])
         if len(required_zones) > 0 and len(set(required_zones) & set(after.current_zones)) == 0:
-            logger.debug(f"Alert for {after.id} (camera={after.camera}, label={after.label}, current_zones={after.current_zones}) was not in a required zone")
+            logger.info(f"Alert for {after.id} (camera={after.camera}, label={after.label}, current_zones={after.current_zones}) was not in a required zone")
             return False
         
         # is the event in an ignored zone?
         ignored_zones = alert_config.zones.get('ignored', [])
         if len(ignored_zones) > 0 and len(set(ignored_zones) & set(after.current_zones)) == 0:
-            logger.debug(f"Alert for {after.id} (camera={after.camera}, label={after.label}, current_zones={after.current_zones}) was in an ignored zone")
+            logger.info(f"Alert for {after.id} (camera={after.camera}, label={after.label}, current_zones={after.current_zones}) was in an ignored zone")
             return False
         
         return True
