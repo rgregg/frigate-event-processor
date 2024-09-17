@@ -47,7 +47,7 @@ class FrigateEventProcessor:
                 previous_timer = self.event_process_timer.get(event_id)
                 if previous_timer is None:
                     logger.info(F"Queuing processing of event {event_id} for min duration {self.config.alert_rules.minimum_duration_seconds}")
-                    timer = threading.Timer(self.config.alert_rules.minimum_duration_seconds, self.process_event_for_alert, args=(event))
+                    timer = threading.Timer(self.config.alert_rules.minimum_duration_seconds, self.process_event_for_alert, args=[event])
                     self.event_process_timer[event_id] = timer
                     timer.start()
                     return
