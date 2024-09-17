@@ -5,13 +5,12 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Copy the requirements file and install dependencies
-#COPY requirements.txt .
-RUN pip install --no-cache-dir pip paho-mqtt
-#RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the Python application into the container
-COPY mqtt_logger.py .
+COPY *.py .
 
 # Set the default command to run the app
-CMD ["python", "mqtt_logger.py"]
+CMD ["python", "mqtt_processor.py"]
 
