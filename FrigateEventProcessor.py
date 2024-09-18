@@ -67,11 +67,28 @@ class FrigateEventProcessor:
     def process_event_for_alert(self, event, previous):
         logger.info(F"Processing {event.id} for alert")
         if self.evaluate_alert(previous, event):
-            alert = self.generate_notification_json(event)
-            alert_payload = json.dumps(alert)
-            logger.info(f"ALERT: {alert_payload}")
-            self.alert_publish_func(self.config.mqtt.alert_topic, alert_payload)
+            self.publish_event_to_mqtt(event)
 
+    def publish_event_to_mqtt(self, event):
+        alert = self.generate_notification_json(event)
+        alert_payload = json.dumps(alert)
+        logger.info(f"ALERT: {alert_payload}")
+        self.alert_publish_func(self.config.mqtt.alert_topic, alert_payload)
+
+    def generate_alert_for_event_id(self, event_id):
+        logger.info(F"Manually processing {event_id} for alert")
+        event = self.ongoing_events.get(event_id)
+        if event is None:
+            logger.warning(f"Event {event_id} no longer available. Nothing generated.")
+            return
+        self.publish_event_to_mqtt(event)
+
+    def log_info_event_id(self, event_id):
+        event = self.ongoing_events.get(event_id)
+        if event is None:
+            logger.warning(f"Event {event_id} no longer available.")
+            return
+        logger.info(f"Event {event_id}: {event}")
 
     """
     Indicates that the event has ended and the object
@@ -307,5 +324,8 @@ class EventData:
         started = datetime.fromtimestamp(self.start_time)
         delta = datetime.now() - started
         return str(delta)
+    
+    def __repr__(self):
+        return f""
         
     

@@ -66,6 +66,12 @@ class MqttEventReceiver:
                         self.processor.print_ongoing_events()
                     elif command.lower() == "q":
                         loop = False
+                    elif command.lower().startswith("a "):
+                        self.processor.generate_alert_for_event_id(command[2:])
+                    elif command.lower().startswith("i "):
+                        self.processor.log_info_event_id(command[2:])
+                    else:
+                        logger.info("Unrecognized command. Expected: [p, q, a <id>, i <id>]")
             except EOFError:
                 logger.info("App received an EOF from stdin - disabling interactive mode")
                 skipInput = True
