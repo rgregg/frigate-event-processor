@@ -16,7 +16,7 @@ class FrigateEventProcessor:
         self.cameras = {alert.camera: alert for alert in self.config.alerts}
         self.camera_notification_history = dict()
         self.label_notification_history = dict()
-        self.event_process_timer = dict()
+        self.event_processing_queue = dict()
         self.alert_publish_func = alert_publish_func
 
 
@@ -34,46 +34,95 @@ class FrigateEventProcessor:
     Cancel any pending timers queued
     """
     def clear_pending_notifications(self):
-        for index, (key, value) in enumerate(self.event_process_timer.items()):
+        for index, (key, value) in enumerate(self.event_processing_queue.items()):
             value.cancel()
-        self.event_process_timer.clear()
+        self.event_processing_queue.clear()
         
     """
     Indicates a new event has started
     """
     def process_event_data(self, data, tag):
         event = EventData(data)
-        previous = self.ongoing_events.get(event.id)
-        self.ongoing_events[event.id] = event
         logger.info(f"{tag}: {event.id}, camera={event.camera}, label={event.label}, score={event.score}")
 
-        # check to see if we need to delay processing of this event
+        # if we need to delay processing this event, queue the event
+        if self.should_queue_event(event):
+            self.queue_event_processing(event)
+        else:
+            previous = self.ongoing_events.get(event.id)
+            self.process_event_for_alert(event, previous)
+
+    """
+    Check to see if an event needs to be queued bsased on the start_time of the event
+    """
+    def should_queue_event(self, event):
+        # Check to see if there is a minimum event duration before we process events
         if self.config.alert_rules.minimum_duration_seconds > 0:            
             event_start_time =  datetime.fromtimestamp(event.start_time)
-            if event_start_time + timedelta(seconds=self.config.alert_rules.minimum_duration_seconds) > datetime.now():
-                # queue this event for future processing
-                event_id = event.id
-                previous_timer = self.event_process_timer.get(event_id)
-                if previous_timer is None:
-                    logger.info(F"Queuing processing of event {event_id} for min duration {self.config.alert_rules.minimum_duration_seconds}")
-                    timer = threading.Timer(self.config.alert_rules.minimum_duration_seconds, self.process_event_for_alert, args=[event, previous])
-                    self.event_process_timer[event_id] = timer
-                    timer.start()
-                    return
-                # TODO: if we already have a timer - we drop this event (which means we may not have the latest data for the alert...)
+            elapsed_time = datetime.now() - event_start_time
+            if elapsed_time.total_seconds() < self.config.alert_rules.minimum_duration_seconds:
+                return True
+            
+        # If this event ID is already queued, don't break the queue
+        if self.event_processing_queue.get(event.id) is not None:
+            return True
+        
+        return False
 
-        self.process_event_for_alert(event, previous)
 
+    """
+    Handles queuing an event for the required duration of time and/or adding an event to an existing queue
+    """
+    def queue_event_processing(self, event):
+        logger.info(F"Queuing event {event.id} for configured minimum duration: {self.config.alert_rules.minimum_duration_seconds}")
+        existing_queue = self.event_processing_queue.get(event.id)
+        if existing_queue is None:
+            existing_queue = EventProcessingQueue(event)
+            self.event_processing_queue[event.id] = existing_queue
+            
+            elapsed_time = datetime.now() - datetime.fromtimestamp(event.start_time)
+            remaining_time = self.config.alert_rules.minimum_duration_seconds - elapsed_time.total_seconds()
+            if remaining_time < 0: remaining_time = 0
+            existing_queue.timer = threading.Timer(remaining_time, self.process_event_queue, args=[existing_queue])
+            existing_queue.timer.start()
+        else:
+            existing_queue.add_to_queue(event)
+
+    """
+    Loops over the events stored into the event's queue and processes them in order to make sure
+    we perform all the necessary notifications
+    """
+    def process_event_queue(self, event_queue):
+        del self.event_processing_queue[event_queue.id]
+        previous = None
+        for event in event_queue.queue:
+            self.process_event_for_alert(event, previous)
+            previous = event
+
+    """
+    Evalautes an event to determine if it should be elevated to an alert
+    """
     def process_event_for_alert(self, event, previous):
-        logger.info(F"Processing {event.id} for alert")
+        logger.info(F"Processing {event.id}...")
+        self.ongoing_events[event.id] = event
         if self.evaluate_alert(previous, event):
             self.publish_event_to_mqtt(event)
 
+    """
+    Publish an alert to the MQTT alerting topic
+    """
     def publish_event_to_mqtt(self, event):
-        alert_payload = self.generate_notification_json(event)
-        logger.info(f"ALERT: {alert_payload}")
-        self.alert_publish_func(self.config.mqtt.alert_topic, alert_payload)
+        alert = self.generate_notification(event)
+        self.camera_notification_history[event.camera] = alert
+        self.label_notification_history[self.camera_and_label_key(event)] = alert
 
+        alert_payload = json.dumps(alert.to_dict())
+        logger.info(f"ALERT: {alert_payload}")
+        self.alert_publish_func(self.config.mqtt.alert_topic + "/alert", alert_payload)
+
+    """
+    Generate the alert content based on an event ID. Used for manually triggering alerts.
+    """
     def generate_alert_for_event_id(self, event_id):
         logger.info(F"Manually processing {event_id} for alert")
         event = self.ongoing_events.get(event_id)
@@ -82,6 +131,9 @@ class FrigateEventProcessor:
             return
         self.publish_event_to_mqtt(event)
 
+    """
+    Write information about a particular event to the log
+    """
     def log_info_event_id(self, event_id):
         event = self.ongoing_events.get(event_id)
         if event is None:
@@ -96,14 +148,14 @@ class FrigateEventProcessor:
     def process_end_event(self, data):
         id = data.get('id')
         
-        previous_timer = self.event_process_timer.get(id)
-        if previous_timer is not None:
-            previous_timer.cancel()
-            del self.event_process_timer[id]
-            logger.info(F"Cancelling processing of {id} since it ended before the min_duration")
+        existing_queue = self.event_processing_queue.get(id)
+        if existing_queue:
+            existing_queue.timer.cancel()
+            del self.event_processing_queue[existing_queue.id]
+            logger.info(F"Canceled processing {id} since it ended before the min_duration")
 
         del self.ongoing_events[id]
-        logger.info(f"DEL: {id}")
+        logger.info(f"END: Event {id} ended")
 
     """
     Compare events to see if we should create
@@ -176,6 +228,9 @@ class FrigateEventProcessor:
                 
         return True
     
+    """
+    Check to see if this event meets the required cooldown time in the configuration
+    """
     def is_event_past_cooldown(self, event):
         cooldown = self.config.alert_rules.cooldown
 
@@ -202,21 +257,24 @@ class FrigateEventProcessor:
 
         return True
 
-    def generate_location_string(event):
-        
+    """
+    Generate the location string for this event based on the camera name and current zones
+    """
+    def generate_location_string(self, event):
+        camera = event.camera.replace("_", " ").title()
         if event.current_zones is not None and len(event.current_zones) > 0:
-            zones = ", ".join(event.current_zones).title()
-            return zones
+            zones = ", ".join(event.current_zones).replace("_", " ").title()
+            return f"{camera} [{zones}]"
         else:
-            camera = event.camera.replace("_", " ").title()
             return camera
 
-    def generate_notification_json(self, event):
+    """
+    Returns a JSON string representing the alert notification for this event
+    """
+    def generate_notification(self, event):
         detection = self.generate_detection_string(event)
         location = self.generate_location_string(event)
-        notification = Notification()
-        notification.group = f"frigate-{event.camera.replace("_", "-")}"
-        notification.tag = event.id
+        notification = Notification(event)
         notification.message = f"{detection} was detected at {location}"
 
         if event.has_snapshot:
@@ -224,9 +282,7 @@ class FrigateEventProcessor:
         if event.has_clip:
             notification.video = self.config.frigate.api_base_url + f"/events/{event.id}/clip.mp4"
 
-        self.camera_notification_history[event.camera] = notification
-        self.label_notification_history[self.camera_and_label_key(event)] = notification
-        return json.dumps(notification.to_dict())
+        return notification
     
     def camera_and_label_key(self, event):
         return f"{event.camera}__{event.label}"
@@ -275,23 +331,17 @@ class FrigateEventProcessor:
 
         logger.info("\n"+str(table))
 
-class Notification:
-    def __init__(self):
-        self.group = None
-        self.tag = None
-        self.message = None
-        self.image = None
-        self.video = None
-        self.timestamp = datetime.now()
-    # Method to convert the Notification object to a dictionary
-    def to_dict(self):
-        return {
-            "group": self.group,
-            "tag": self.tag,
-            "message": self.message,
-            "image": self.image,
-            "video": self.video
-        }
+
+class EventProcessingQueue:
+    def __init__(self, event):
+        self.id = event.id
+        self.queue = [event]
+        self.timer = None
+    
+    def add_to_queue(self, event):
+        self.queue.append(event)
+
+
 
 
 class EventData:
@@ -352,4 +402,33 @@ class EventData:
     def __repr__(self):
         return f"Event({json.dumps(self.to_dict(), indent=2)})"
         
-    
+class Notification:
+    def __init__(self, event: EventData):
+        self.message = None
+        self.image = None
+        self.video = None
+        
+        self.group = f"frigate-{event.camera.replace("_", "-")}"
+        self.event_id = event.id
+        self.score = event.score
+        self.label = event.label
+        self.sub_label = event.sub_label
+        self.camera =event.camera
+        self.zones = event.current_zones
+        self.timestamp = datetime.now()
+    # Method to convert the Notification object to a dictionary
+    def to_dict(self):
+        return {
+            "id": self.event_id,
+            "group": self.group,
+            "message": self.message,
+            "score": self.score,
+            "label": self.label,
+            "sub_label": self.sub_label,
+            "camera": self.camera,
+            "zones": self.zones,
+            "image": self.image,
+            "video": self.video,
+            "timestamp": str(self.timestamp)
+            
+        }

@@ -30,6 +30,16 @@ class MqttEventReceiver:
         except json.JSONDecodeError:
             logger.warning(f"Failed to decode message as JSON from topic {msg.topic}: {message}")
 
+    def on_connect(self, client, userdata, flags, rc, properties):
+            logger.info(f"MQTT session is connected: {rc}")
+            # Publish "online" message when successfully connected
+            client.publish(self.config.mqtt.alert_topic + "/status", "online", retain=True)
+
+    def on_disconnect(self, client, userdata, flags, rc, properties):
+        if rc != 0:
+            logger.warning(f"MQTT session is disconnected: {rc}")
+
+
     def publish_message(self, topic, value):
         client = self.mqtt_client
         client.publish(topic, value)
@@ -37,13 +47,21 @@ class MqttEventReceiver:
     # Function to connect to the broker and subscribe to the topic
     def connect_and_loop(self):
         client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+        client.will_set(self.config.mqtt.alert_topic + "/status", "offline", retain=True)
         client.on_message = self.on_message
+        client.on_connect = self.on_connect
+        client.on_disconnect = self.on_disconnect
 
         broker = self.config.mqtt.host
         port = self.config.mqtt.port
 
         logger.info(f"Connecting to broker {broker}:{port}")
-        client.connect(broker, port, 60)
+        try:
+            client.connect(broker, port, 60)
+        except Exception as e:
+            logger.error(f"Unable to connect to server: {e}")
+            raise
+        
         self.mqtt_client = client
 
         topic = self.config.mqtt.listen_topic
