@@ -1,7 +1,6 @@
 import paho.mqtt.client as mqtt
-import os
 import json
-import sys
+import time
 import logging
 from datetime import datetime
 from FrigateEventProcessor import FrigateEventProcessor
@@ -55,14 +54,22 @@ class MqttEventReceiver:
         client.loop_start()
 
         loop = True
+        skipInput = False
         while loop:
             # get user input and respond
             try:
-                command = input("")
-                if command.lower() == "p":
-                    self.processor.print_ongoing_events()
-                elif command.lower() == "q":
-                    loop = False
+                if skipInput:
+                    time.sleep(1)
+                else:
+                    command = input("")
+                    if command.lower() == "p":
+                        self.processor.print_ongoing_events()
+                    elif command.lower() == "q":
+                        loop = False
+            except EOFError:
+                logger.info("App received an EOF from stdin - disabling interactive mode")
+                skipInput = True
+                
             except KeyboardInterrupt:
                 logger.info("App received signal to shudown.")
                 loop = False

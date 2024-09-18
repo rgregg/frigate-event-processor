@@ -2,7 +2,7 @@ import logging
 import json
 import threading
 from logging.handlers import RotatingFileHandler
-from AppConfiguration import AppConfig
+from AppConfiguration import AppConfig, ZonesConfig
 from datetime import datetime, timedelta
 from prettytable import PrettyTable
 
@@ -127,14 +127,14 @@ class FrigateEventProcessor:
             return False
         
         # is the event including a required zone?
-        required_zones = alert_config.zones.get('required', [])
-        if len(required_zones) > 0 and len(set(required_zones) & set(after.current_zones)) == 0:
+        required_zones = alert_config.zones.require_zones
+        if not ZonesConfig.check_zone_match(required_zones, after.current_zones, after.label):
             logger.info(f"Event {after.id} (camera={after.camera}, label={after.label}, current_zones={after.current_zones}) was not in a required zone")
             return False
         
         # is the event in an ignored zone?
         ignored_zones = alert_config.zones.get('ignored', [])
-        if len(ignored_zones) > 0 and len(set(ignored_zones) & set(after.current_zones)) == 0:
+        if ZonesConfig.check_zone_match(required_zones, after.current_zones, after.label):
             logger.info(f"Event {after.id} (camera={after.camera}, label={after.label}, current_zones={after.current_zones}) was in an ignored zone")
             return False
         

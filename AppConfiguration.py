@@ -5,6 +5,7 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from pathlib import Path
 import re
+from typing import List
 
 # Define the classes to map the structure
 logger = logging.getLogger(__name__)
@@ -38,12 +39,55 @@ class FrigateConfig:
 class AlertConfig:
     def __init__(self, camera):
         self.camera = camera
-        self.objects = []
+        self.labels = []
         self.enabled = True
-        self.zones = {}
+        self.zones = ZonesConfig()
 
     def __repr__(self):
-        return f"Alert(camera={self.camera}, objects={self.objects}, enabled={self.enabled}, zones={self.zones})"
+        return f"Alert(camera={self.camera}, objects={self.labels}, enabled={self.enabled}, zones={self.zones})"
+
+class ZoneAndLabelsConfig:
+    def __init__(self):
+        self.zone = ""
+        self.labels = []
+
+    def __repr__(self):
+        return f"ZoneAndLabel(zone={self.zone}, labels={self.labels})"
+
+
+class ZonesConfig:
+    def __init__(self):
+        self.ignore_zones = []
+        self.require_zones = []
+
+    def __repr__(self):
+        return f"Zones(ignored={self.ignore_zones}, required={self.require_zones})"
+    
+    @staticmethod 
+    def check_zone_match(zone_configs: list[ZoneAndLabelsConfig], active_zones: list[str], label: str) -> bool:
+        for config in zone_configs:
+            # Check if the zone is in active_zones and the label is in the labels of the object
+            if config.zone in active_zones:
+                # if the label doesn't exist, the zone is enough - otherwise, if the rule has a * or matches the label
+                if label is None or "*" in config.labels or label in config.labels:
+                    return True
+        return False
+
+    @staticmethod
+    def parse_zones(data):
+        if data is None:
+            return []
+        
+        config = []
+        for item in data:
+            zone = ZoneAndLabelsConfig()
+            zone.zone = item.get('zone')
+            zone.labels = item.get('labels')
+            config.append(zone)
+
+        return config
+
+
 
 class CooldownConfig:
     def __init__(self):
@@ -88,33 +132,39 @@ class AppConfig:
 
     def apply_from_dict(self, data):
         # Parse mqtt
-        mqtt = data.get('mqtt')
-        if mqtt is not None:
-            self.mqtt.host = mqtt.get('host') or "localhost"
-            self.mqtt.port = mqtt.get('port') or 1883
-            self.mqtt.listen_topic = mqtt.get('listen_topic') or "#"
-            self.mqtt.alert_topic = mqtt.get('alert_topic') or "alerts/camera_system"
-            self.mqtt.username = mqtt.get('username')
-            self.mqtt.password = mqtt.get('password')
+        self.load_mqtt_config(data)
 
         # Parse frigate
-        frigate = data.get('frigate')
-        if frigate is not None:
-            self.frigate.host = frigate.get('host') or "localhost"
-            self.frigate.port = frigate.get('port') or 5000
-            self.frigate.use_ssl = frigate.get('ssl') or False
+        self.load_frigate_config(data)
 
-        # Parse alerts
-        alerts = data.get('alerts')
-        self.alerts.clear()
-        for alert in alerts:
-            new_alert = AlertConfig(alert.get('camera'))
-            new_alert.enabled = alert.get('enabled') or True
-            new_alert.objects = alert.get('objects') or []
-            new_alert.zones = alert.get('zones') or {}
-            self.alerts.append(new_alert)
+        # Parse alerts/cameras
+        self.load_alerts_config(data)
 
         # Parse alert_rules
+        self.load_rules_config(data)
+        
+        # Parse object tracking
+        self.load_tracking_config(data)
+
+        # Parse logger
+        self.load_logging_config(data)
+
+    def load_logging_config(self, data):
+        logging = data.get('logging')
+        if logging is not None:
+            self.logging.level = logging.get('level')
+            self.logging.path = logging.get('path')
+            self.logging.rotate = logging.get('rotate')
+            self.logging.max_keep = logging.get('max_keep')
+
+    def load_tracking_config(self, data):
+        tracking = data.get('object_tracking')
+        if tracking is not None:
+            self.object_tracking.enabled = tracking.get('enabled')
+        else:
+            self.object_tracking.enabled = True
+
+    def load_rules_config(self, data):
         rules = data.get('alert_rules')
         if rules is not None:
             self.alert_rules.minimum_duration_seconds = self.parse_duration(rules.get('min_event_duration', "0s"))
@@ -128,37 +178,54 @@ class AppConfig:
         else:
             self.alert_rules.cooldown.camera_duration_seconds = 0
             self.alert_rules.cooldown.label_duration_seconds = 0
-        
-        
-        # Parse object tracking
-        tracking = data.get('object_tracking')
-        if tracking is not None:
-            self.object_tracking.enabled = tracking.get('enabled')
-        else:
-            self.object_tracking.enabled = True
 
-        # Parse logger
-        logging = data.get('logging')
-        if logging is not None:
-            self.logging.level = logging.get('level')
-            self.logging.path = logging.get('path')
-            self.logging.rotate = logging.get('rotate')
-            self.logging.max_keep = logging.get('max_keep')
+    def load_alerts_config(self, data):
+        alerts = data.get('alerts')
+        self.alerts.clear()
+        for alert in alerts:
+            new_alert = AlertConfig(alert.get('camera'))
+            new_alert.enabled = alert.get('enabled') or True
+            new_alert.labels = alert.get('labels') or []
+            
+            zones = alert.get('zones')
+            if zones is not None:
+                new_alert.zones.ignore_zones = ZonesConfig.parse_zones(zones.get('ignore'))
+                new_alert.zones.require_zones = ZonesConfig.parse_zones(zones.get('require'))
+            
+            new_alert.zones = alert.get('zones') or {}
+            self.alerts.append(new_alert)
+
+    def load_frigate_config(self, data):
+        frigate = data.get('frigate')
+        if frigate is not None:
+            self.frigate.host = frigate.get('host') or "localhost"
+            self.frigate.port = frigate.get('port') or 5000
+            self.frigate.use_ssl = frigate.get('ssl') or False
+
+    def load_mqtt_config(self, data):
+        mqtt = data.get('mqtt')
+        if mqtt is not None:
+            self.mqtt.host = mqtt.get('host') or "localhost"
+            self.mqtt.port = mqtt.get('port') or 1883
+            self.mqtt.listen_topic = mqtt.get('listen_topic') or "#"
+            self.mqtt.alert_topic = mqtt.get('alert_topic') or "alerts/camera_system"
+            self.mqtt.username = mqtt.get('username')
+            self.mqtt.password = mqtt.get('password')
 
     def __repr__(self):
         return (f"Config(mqtt={self.mqtt}, alerts={self.alerts}, cooldown={self.cooldown}, "
                 f"snapshots={self.snapshots}, object_tracking={self.object_tracking})")
     
     def parse_duration(self, duration_str):
-        # Define regex pattern to capture number and unit (s = seconds, m = minutes, h = hours)
-        pattern = r'(\d+)([smh])'
+        # Update regex pattern to capture float or integer and unit (s = seconds, m = minutes, h = hours)
+        pattern = r'(\d*\.?\d+)([smh])'
         match = re.match(pattern, duration_str)
         
         if not match:
             raise ValueError(f"Invalid duration format: {duration_str}")
         
         value, unit = match.groups()
-        value = int(value)
+        value = float(value)  # Convert value to float to handle both integers and floats
         
         if unit == 's':  # seconds
             return value
