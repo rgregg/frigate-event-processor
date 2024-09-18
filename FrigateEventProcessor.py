@@ -70,8 +70,7 @@ class FrigateEventProcessor:
             self.publish_event_to_mqtt(event)
 
     def publish_event_to_mqtt(self, event):
-        alert = self.generate_notification_json(event)
-        alert_payload = json.dumps(alert)
+        alert_payload = self.generate_notification_json(event)
         logger.info(f"ALERT: {alert_payload}")
         self.alert_publish_func(self.config.mqtt.alert_topic, alert_payload)
 
@@ -325,7 +324,32 @@ class EventData:
         delta = datetime.now() - started
         return str(delta)
     
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'camera': self.camera,
+            'frame_time': self.frame_time,
+            'snapshot': self.snapshot,
+            'label': self.label,
+            'sub_label': self.sub_label,
+            'top_score': self.top_score,
+            'start_time': self.start_time,
+            'end_time': self.end_time,
+            'score': self.score,
+            'box': self.box,
+            'area': self.area,
+            'ratio': self.ratio,
+            'region': self.region,
+            'stationary': self.stationary,
+            'motionless_count': self.motionless_count,
+            'position_changes': self.position_changes,
+            'current_zones': self.current_zones,
+            'entered_zones': self.entered_zones,
+            'has_clip': self.has_clip,
+            'has_snapshot': self.has_snapshot
+        }
+
     def __repr__(self):
-        return f""
+        return f"Event({json.dumps(self.to_dict(), indent=2)})"
         
     
