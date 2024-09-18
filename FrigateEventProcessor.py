@@ -74,15 +74,16 @@ class FrigateEventProcessor:
     Handles queuing an event for the required duration of time and/or adding an event to an existing queue
     """
     def queue_event_processing(self, event):
-        logger.info(F"Queuing event {event.id} for configured minimum duration: {self.config.alert_rules.minimum_duration_seconds}")
+        elapsed_time = datetime.now() - datetime.fromtimestamp(event.start_time)
+        remaining_time = self.config.alert_rules.minimum_duration_seconds - elapsed_time.total_seconds()
+        if remaining_time < 0: remaining_time = 0
+
+        logger.info(F"Queuing event {event.id} for remaining minimum duration: {remaining_time}")
         existing_queue = self.event_processing_queue.get(event.id)
         if existing_queue is None:
             existing_queue = EventProcessingQueue(event)
             self.event_processing_queue[event.id] = existing_queue
             
-            elapsed_time = datetime.now() - datetime.fromtimestamp(event.start_time)
-            remaining_time = self.config.alert_rules.minimum_duration_seconds - elapsed_time.total_seconds()
-            if remaining_time < 0: remaining_time = 0
             existing_queue.timer = threading.Timer(remaining_time, self.process_event_queue, args=[existing_queue])
             existing_queue.timer.start()
         else:
@@ -147,15 +148,19 @@ class FrigateEventProcessor:
     """
     def process_end_event(self, data):
         id = data.get('id')
-        
+        logger.info(f"END: Event {id} ended")
+
         existing_queue = self.event_processing_queue.get(id)
         if existing_queue:
             existing_queue.timer.cancel()
             del self.event_processing_queue[existing_queue.id]
             logger.info(F"Canceled processing {id} since it ended before the min_duration")
 
-        del self.ongoing_events[id]
-        logger.info(f"END: Event {id} ended")
+        try:
+            del self.ongoing_events[id]
+        except KeyError:
+            pass
+        
 
     """
     Compare events to see if we should create

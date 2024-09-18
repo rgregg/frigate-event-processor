@@ -61,7 +61,7 @@ class MqttEventReceiver:
         except Exception as e:
             logger.error(f"Unable to connect to server: {e}")
             raise
-        
+
         self.mqtt_client = client
 
         topic = self.config.mqtt.listen_topic
@@ -99,6 +99,7 @@ class MqttEventReceiver:
                 loop = False
 
         logger.info("Shutting down...")
+        client.publish(self.config.mqtt.alert_topic + "/status", "offline", retain=True)
 
         client.loop_stop()
         client.disconnect()
