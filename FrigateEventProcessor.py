@@ -21,7 +21,6 @@ class FrigateEventProcessor:
 
 
     def process_event(self, event):
-
         type = event.get('type')
         before = event.get('before')
         after = event.get('after')
@@ -44,6 +43,7 @@ class FrigateEventProcessor:
     """
     def process_event_data(self, data, tag):
         event = EventData(data)
+        previous = self.ongoing_events.get(event.id)
         self.ongoing_events[event.id] = event
         logger.info(f"{tag}: {event.id}, camera={event.camera}, label={event.label}, score={event.score}")
 
@@ -56,17 +56,16 @@ class FrigateEventProcessor:
                 previous_timer = self.event_process_timer.get(event_id)
                 if previous_timer is None:
                     logger.info(F"Queuing processing of event {event_id} for min duration {self.config.alert_rules.minimum_duration_seconds}")
-                    timer = threading.Timer(self.config.alert_rules.minimum_duration_seconds, self.process_event_for_alert, args=[event])
+                    timer = threading.Timer(self.config.alert_rules.minimum_duration_seconds, self.process_event_for_alert, args=[event, previous])
                     self.event_process_timer[event_id] = timer
                     timer.start()
                     return
                 # TODO: if we already have a timer - we drop this event (which means we may not have the latest data for the alert...)
 
-        self.process_event_for_alert(event)
+        self.process_event_for_alert(event, previous)
 
-    def process_event_for_alert(self, event):
+    def process_event_for_alert(self, event, previous):
         logger.info(F"Processing {event.id} for alert")
-        previous = self.ongoing_events.get(event.id)
         if self.evaluate_alert(previous, event):
             alert = self.generate_notification_json(event)
             alert_payload = json.dumps(alert)
@@ -110,6 +109,14 @@ class FrigateEventProcessor:
             logger.info(f"Event update for {before.id} was not significant and was discarded.")
             return False
         
+        # check for max_duration
+        if self.config.alert_rules.maximum_duration_seconds > 0:
+            event_too_old = datetime.fromtimestamp(after.start_time) + timedelta(seconds=self.config.alert_rules.maximum_duration_seconds) < datetime.now()
+            if event_too_old:
+                logger.info(f"Event {after.id} was too old and discarded.")
+                return False
+
+
         # check to see if this event meets the configuration criteria for this camera
         alert_config = self.config_for_camera(after.camera)
         if alert_config is None:
@@ -122,19 +129,19 @@ class FrigateEventProcessor:
             return False
 
         # is the alert for an expected object type (label)
-        if not after.label in alert_config.objects:
+        if not after.label in alert_config.labels:
             logger.info(f"Event {after.id} (camera={after.camera}, label={after.label}) was not included in configuration")
             return False
         
         # is the event including a required zone?
         required_zones = alert_config.zones.require_zones
-        if not ZonesConfig.check_zone_match(required_zones, after.current_zones, after.label):
+        if not ZonesConfig.check_zone_match(required_zones, after.current_zones, after.label, True):
             logger.info(f"Event {after.id} (camera={after.camera}, label={after.label}, current_zones={after.current_zones}) was not in a required zone")
             return False
         
         # is the event in an ignored zone?
-        ignored_zones = alert_config.zones.get('ignored', [])
-        if ZonesConfig.check_zone_match(required_zones, after.current_zones, after.label):
+        ignored_zones = alert_config.zones.ignore_zones
+        if ZonesConfig.check_zone_match(ignored_zones, after.current_zones, after.label, False):
             logger.info(f"Event {after.id} (camera={after.camera}, label={after.label}, current_zones={after.current_zones}) was in an ignored zone")
             return False
         
@@ -179,14 +186,22 @@ class FrigateEventProcessor:
 
         return True
 
+    def generate_location_string(event):
+        
+        if event.current_zones is not None and len(event.current_zones) > 0:
+            zones = ", ".join(event.current_zones).title()
+            return zones
+        else:
+            camera = event.camera.replace("_", " ").title()
+            return camera
 
     def generate_notification_json(self, event):
-        camera = event.camera.replace("_", " ").title()
         detection = self.generate_detection_string(event)
+        location = self.generate_location_string(event)
         notification = Notification()
         notification.group = f"frigate-{event.camera.replace("_", "-")}"
         notification.tag = event.id
-        notification.message = f"{detection} was detected on {camera}"
+        notification.message = f"{detection} was detected at {location}"
 
         if event.has_snapshot:
             notification.image = self.config.frigate.api_base_url + f"/events/{event.id}/thumbnail.jpg"

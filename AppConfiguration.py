@@ -64,7 +64,10 @@ class ZonesConfig:
         return f"Zones(ignored={self.ignore_zones}, required={self.require_zones})"
     
     @staticmethod 
-    def check_zone_match(zone_configs: list[ZoneAndLabelsConfig], active_zones: list[str], label: str) -> bool:
+    def check_zone_match(zone_configs: list[ZoneAndLabelsConfig], active_zones: list[str], label: str, default: bool) -> bool:
+        if zone_configs is None or len(zone_configs) == 0:
+            return default
+        
         for config in zone_configs:
             # Check if the zone is in active_zones and the label is in the labels of the object
             if config.zone in active_zones:
@@ -100,6 +103,7 @@ class CooldownConfig:
 class AlertRulesConfig:
     def __init__(self):
         self.minimum_duration_seconds = 0
+        self.maximum_duration_seconds = 0
         self.require_snapshot = False
         self.require_video = False
         self.cooldown = CooldownConfig()
@@ -168,6 +172,7 @@ class AppConfig:
         rules = data.get('alert_rules')
         if rules is not None:
             self.alert_rules.minimum_duration_seconds = self.parse_duration(rules.get('min_event_duration', "0s"))
+            self.alert_rules.maximum_duration_seconds = self.parse_duration(rules.get('max_event_duration', "0s"))
             self.alert_rules.require_snapshot = rules.get('snapshot', False)
             self.alert_rules.require_video = rules.get('video', False)
 
@@ -191,8 +196,6 @@ class AppConfig:
             if zones is not None:
                 new_alert.zones.ignore_zones = ZonesConfig.parse_zones(zones.get('ignore'))
                 new_alert.zones.require_zones = ZonesConfig.parse_zones(zones.get('require'))
-            
-            new_alert.zones = alert.get('zones') or {}
             self.alerts.append(new_alert)
 
     def load_frigate_config(self, data):
