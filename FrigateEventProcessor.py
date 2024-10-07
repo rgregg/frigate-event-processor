@@ -318,7 +318,8 @@ class FrigateEventProcessor:
         )
 
         if self.config.logging.path is not None:
-            handler = RotatingFileHandler(self.config.logging.path, maxBytes=5*1024*1024, backupCount=self.config.logging.max_keep)
+            max_keep = self.config.logging.max_keep or 10
+            handler = RotatingFileHandler(self.config.logging.path, maxBytes=5*1024*1024, backupCount=max_keep)
             handler.setLevel(level)
             formatter = logging.Formatter("%(asctime)-15s %(name)-8s %(levelname)s: %(message)s")
             handler.setFormatter(formatter)
