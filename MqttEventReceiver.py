@@ -32,6 +32,12 @@ class MqttEventReceiver:
 
     def on_connect(self, client, userdata, flags, rc, properties):
             logger.info(f"MQTT session is connected: {rc}")
+
+            # Subscribe to the topic for events
+            topic = self.config.mqtt.listen_topic
+            logger.info(f"Subscribing to topic {topic}")
+            client.subscribe(topic)
+
             # Publish "online" message when successfully connected
             client.publish(self.config.mqtt.alert_topic + "/status", "online", retain=True)
 
@@ -63,10 +69,6 @@ class MqttEventReceiver:
             raise
 
         self.mqtt_client = client
-
-        topic = self.config.mqtt.listen_topic
-        logger.info(f"Subscribing to topic {topic}")
-        client.subscribe(topic)
 
         # Starts processing the loop on another thread        
         client.loop_start()
