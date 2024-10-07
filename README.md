@@ -86,3 +86,26 @@ logging:
   path: "./logs/frigate-processor.log"
   max-keep: 10
 ```
+
+## Running with Docker Compose
+
+The easiest way to run FEP is to add it to your Docker Compose environment where you are already
+running Frigate and MQTT:
+
+```yaml
+services:
+  frigate:
+    # your frigate configuration here
+  event-processor:
+    container_name: frigate-event-processor
+    image: rgregg/frigate-event-processor:main
+    restart: unless-stopped
+    volumes:
+      - ./fep/logs:/app/logs
+      - ./fep/config.yaml:/app/config.yaml:ro
+    depends_on:
+      - frigate
+```
+
+FEP is light weight and only requires access to your MQTT server - you can run it on any box that
+has access to MQTT.
