@@ -8,7 +8,6 @@ to your device. You can filter based on multiple criteria, including:
 
 * Camera
 * Label
-* Sub-label
 * Zone (required or ignored zones)
 * Minimum event duration (filter out events that last less than X seconds)
 * Maximum event duration (filter out events which started more than X seconds ago)
