@@ -109,3 +109,61 @@ services:
 
 FEP is light weight and only requires access to your MQTT server - you can run it on any box that
 has access to MQTT.
+
+
+## Home Assistant Notifications
+You can use FEP with Home Assistant to push notifications to your mobile device using an automation
+assoicated with the MQTT topic that FEP publishes on. Here is an example automation YAML:
+
+```yaml
+alias: Frigate - Deliver Processed Events
+description: Send mobile notifications when Frigate detects something
+triggers:
+  - alias: When a Frigate event has been received
+    topic: alerts/camera_system/alert
+    variables:
+      event: "{{ trigger.payload_json }}"
+      camera: "{{ trigger.payload_json['camera'] }}"
+      id: "{{ trigger.payload_json['id'] }}"
+      message: "{{ trigger.payload_json['message'] }}"
+    trigger: mqtt
+conditions: []
+actions:
+  - alias: Send mobile notification
+    choose:
+      - conditions:
+          - alias: If the event has a snapshot
+            condition: template
+            value_template: "{{ event.image != none }}"
+        sequence:
+          - alias: Send notification with an image
+            data:
+              title: Home Assistant
+              message: "{{ message }}"
+              data:
+                url: /dashboard-cameras/{{ camera }}
+                clickAction: /dashboard-cameras/{{ camera }}
+                image: /api/frigate/notifications/{{ id }}/snapshot.jpg
+                group: frigate-{{ camera }}
+                tag: "{{ id }}"
+            enabled: true
+            action: notify.mobile_phone
+        alias: Send notification with a picture
+      - conditions: []
+        sequence:
+          - alias: Send notification without an image
+            data:
+              title: Home Assistant
+              message: "{{ message }}"
+              data:
+                url: /dashboard-cameras/{{ camera }}
+                clickAction: /dashboard-cameras/{{ camera }}
+                group: frigate-{{ camera }}
+                tag: "{{ id }}"
+            enabled: true
+            action: notify.mobile_phone
+        alias: Send notification without a picture
+mode: parallel
+max: 10
+
+```
