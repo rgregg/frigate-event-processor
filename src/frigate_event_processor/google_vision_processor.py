@@ -2,7 +2,7 @@ import base64
 import google.generativeai as genai
 import httpx
 import logging
-from AppConfiguration import AIConfig
+from .app_configuration import AIConfig
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +15,7 @@ class GoogleVision:
             genai.configure(api_key=ai_config.api_key)
             ai_model = ai_config.ai_model
             self.model = genai.GenerativeModel(model_name=ai_model)
+            logger.info("Google AI model initialized: %s", ai_model)
 
     @property
     def enabled(self):

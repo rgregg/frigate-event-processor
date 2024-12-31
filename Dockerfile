@@ -9,8 +9,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the Python application into the container
-COPY *.py .
+COPY src ./src
 
+WORKDIR /app/src
 # Set the default command to run the app
-CMD ["python", "mqtt_processor.py"]
+CMD ["python", "-m", "frigate_event_processor.main"]
 

@@ -18,8 +18,8 @@ Functions:
 import logging
 import os
 
-from MqttEventReceiver import MqttEventReceiver
-from AppConfiguration import FileBasedAppConfig
+from .mqtt_event_receiver import MqttEventReceiver
+from .app_configuration import FileBasedAppConfig
 
 logger = logging.getLogger(__name__)
 

@@ -16,9 +16,8 @@ import json
 import time
 import logging
 import paho.mqtt.client as mqtt
-from FrigateEventProcessor import FrigateEventProcessor
-
-from AppConfiguration import AppConfig
+from .frigate_event_processor import FrigateEventProcessor
+from .app_configuration import AppConfig
 
 logger = logging.getLogger(__name__)
 

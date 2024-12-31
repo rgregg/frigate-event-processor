@@ -4,8 +4,8 @@ import threading
 from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
 from prettytable import PrettyTable
-from AppConfiguration import AppConfig, ZonesConfig
-from GoogleVisionProcessor import GoogleVision
+from .app_configuration import AppConfig, ZonesConfig
+from .google_vision_processor import GoogleVision
 
 logger = logging.getLogger(__name__)
 
