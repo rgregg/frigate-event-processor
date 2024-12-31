@@ -11,6 +11,7 @@ from typing import List
 logger = logging.getLogger(__name__)
 
 class MqttConfig:
+    """Configuration for the MQTT broker"""
     def __init__(self):
         self.host = "localhost"
         self.port = 1883
@@ -23,6 +24,7 @@ class MqttConfig:
         return f"Mqtt(host={self.host}, username={self.username}, password={self.password}, listen_topic={self.listen_topic}, alert_topic={self.alert_topic})"
 
 class FrigateConfig:
+    """Configuration for the Frigate API"""
     def __init__(self):
         self.host = "localhost"
         self.port = 5000
@@ -30,6 +32,7 @@ class FrigateConfig:
 
     @property
     def api_base_url(self):
+        """Get the base URL for the Frigate API"""
         protocol = "https" if self.use_ssl else "http"
         return f"{protocol}://{self.host}:{self.port}/api"
     
@@ -37,6 +40,7 @@ class FrigateConfig:
         return f"Frigate(url={self.api_base_url})"
 
 class AlertConfig:
+    """Configuration for alerts"""
     def __init__(self, camera):
         self.camera = camera
         self.labels = []
@@ -47,6 +51,7 @@ class AlertConfig:
         return f"Alert(camera={self.camera}, objects={self.labels}, enabled={self.enabled}, zones={self.zones})"
 
 class ZoneAndLabelsConfig:
+    """Configuration for zones and labels"""
     def __init__(self):
         self.zone = ""
         self.labels = []
@@ -56,6 +61,7 @@ class ZoneAndLabelsConfig:
 
 
 class ZonesConfig:
+    """Configuration for zones"""
     def __init__(self):
         self.ignore_zones = []
         self.require_zones = []
@@ -65,6 +71,7 @@ class ZonesConfig:
     
     @staticmethod 
     def check_zone_match(zone_configs: list[ZoneAndLabelsConfig], active_zones: list[str], label: str, default: bool) -> bool:
+        """Check if the zone matches the active zones and labels"""
         if zone_configs is None or len(zone_configs) == 0:
             return default
         
@@ -78,6 +85,7 @@ class ZonesConfig:
 
     @staticmethod
     def parse_zones(data):
+        """Parse the zones from the configuration"""
         if data is None:
             return []
         
@@ -90,9 +98,8 @@ class ZonesConfig:
 
         return config
 
-
-
 class CooldownConfig:
+    """Configuration for cooldowns"""
     def __init__(self):
         self.camera_duration_seconds = 0
         self.label_duration_seconds = 0
@@ -101,6 +108,7 @@ class CooldownConfig:
         return f"Cooldown(camera={self.camera_duration_seconds}, object={self.label_duration_seconds})"
 
 class AlertRulesConfig:
+    """Configuration for alerting rules"""
     def __init__(self):
         self.minimum_duration_seconds = 0
         self.maximum_duration_seconds = 0
@@ -112,6 +120,7 @@ class AlertRulesConfig:
         return f"AlertRules(min_dur={self.minimum_duration_seconds}s, snapshots={self.require_snapshot}, video={self.require_video}, cooldown={self.cooldown})"
 
 class ObjectTrackingConfig:
+    """Configuration for object tracking"""
     def __init__(self):
         self.enabled = True
 
@@ -119,13 +128,28 @@ class ObjectTrackingConfig:
         return f"ObjectTracking(enabled={self.enabled})"
     
 class LoggingConfig:
+    """Configuration for the logger"""
     def __init__(self):
         self.level = logging.INFO
         self.path = None
         self.rotate = False
         self.max_keep = 10
 
+class AIConfig:
+    """Configuration for the AI model"""
+    def __init__(self):
+        self.enabled = False
+        self.api_key = None
+        self.ai_model = None
+        self.snapshot_format = "image/jpeg"
+        self.prompt = None
+        self.inject_detection = True
+
+    def __repr__(self):
+        return f"AIConfig(enabled={self.enabled}, api_key={self.api_key}, ai_model={self.ai_model}, snapshot_format={self.snapshot_format}, prompt={self.prompt}, inject_detection={self.inject_detection})"
+
 class AppConfig:
+    """Configuration for the application"""
     def __init__(self):
         self.mqtt = MqttConfig()
         self.frigate = FrigateConfig()
@@ -133,8 +157,10 @@ class AppConfig:
         self.alert_rules = AlertRulesConfig()
         self.object_tracking = ObjectTrackingConfig()
         self.logging = LoggingConfig()
+        self.ai = AIConfig()
 
     def apply_from_dict(self, data):
+        """Load settings from a dictionary"""
         # Parse mqtt
         self.load_mqtt_config(data)
 
@@ -153,15 +179,19 @@ class AppConfig:
         # Parse logger
         self.load_logging_config(data)
 
+        self.load_ai_config(data)
+
     def load_logging_config(self, data):
-        logging = data.get('logging')
-        if logging is not None:
-            self.logging.level = logging.get('level')
-            self.logging.path = logging.get('path')
-            self.logging.rotate = logging.get('rotate')
-            self.logging.max_keep = logging.get('max_keep')
+        """Load the logging settings"""
+        log_config = data.get('logging')
+        if log_config is not None:
+            self.logging.level = log_config.get('level')
+            self.logging.path = log_config.get('path')
+            self.logging.rotate = log_config.get('rotate')
+            self.logging.max_keep = log_config.get('max_keep')
 
     def load_tracking_config(self, data):
+        """Load object tracking settings"""
         tracking = data.get('object_tracking')
         if tracking is not None:
             self.object_tracking.enabled = tracking.get('enabled')
@@ -169,6 +199,7 @@ class AppConfig:
             self.object_tracking.enabled = True
 
     def load_rules_config(self, data):
+        """Load alerting rules"""
         rules = data.get('alert_rules')
         if rules is not None:
             self.alert_rules.minimum_duration_seconds = self.parse_duration(rules.get('min_event_duration', "0s"))
@@ -185,6 +216,7 @@ class AppConfig:
             self.alert_rules.cooldown.label_duration_seconds = 0
 
     def load_alerts_config(self, data):
+        """Load alerts configuration"""
         alerts = data.get('alerts')
         self.alerts.clear()
         for alert in alerts:
@@ -199,6 +231,7 @@ class AppConfig:
             self.alerts.append(new_alert)
 
     def load_frigate_config(self, data):
+        """Load frigate configuration"""
         frigate = data.get('frigate')
         if frigate is not None:
             self.frigate.host = frigate.get('host') or "localhost"
@@ -206,6 +239,7 @@ class AppConfig:
             self.frigate.use_ssl = frigate.get('ssl') or False
 
     def load_mqtt_config(self, data):
+        """Load saved configuration for the MQTT"""
         mqtt = data.get('mqtt')
         if mqtt is not None:
             self.mqtt.host = mqtt.get('host') or "localhost"
@@ -214,12 +248,23 @@ class AppConfig:
             self.mqtt.alert_topic = mqtt.get('alert_topic') or "alerts/camera_system"
             self.mqtt.username = mqtt.get('username')
             self.mqtt.password = mqtt.get('password')
+    
+    def load_ai_config(self, data):
+        """Load AI configuration"""
+        ai = data.get('ai')
+        if ai is not None:
+            self.ai.enabled = ai.get('enabled') or False
+            self.ai.api_key = ai.get('api_key') or None
+            self.ai.ai_model = ai.get('ai_model') or "gemini-1.5-pro"
+            self.ai.snapshot_format = ai.get('snapshot_format') or "image/jpeg"
+            self.ai.prompt = ai.get('prompt') or None
+            self.ai.inject_detection = ai.get('inject_detection') or True
 
     def __repr__(self):
-        return (f"Config(mqtt={self.mqtt}, alerts={self.alerts}, cooldown={self.cooldown}, "
-                f"snapshots={self.snapshots}, object_tracking={self.object_tracking})")
+        return (f"AppConfig(mqtt={self.mqtt}, frigate={self.frigate}, alerts={self.alerts}, alert_rules={self.alert_rules}, object_tracking={self.object_tracking}, logging={self.logging}, ai={self.ai})")
     
     def parse_duration(self, duration_str):
+        """Parse a duration string into seconds"""
         # Update regex pattern to capture float or integer and unit (s = seconds, m = minutes, h = hours)
         pattern = r'(\d*\.?\d+)([smh])'
         match = re.match(pattern, duration_str)
@@ -232,15 +277,16 @@ class AppConfig:
         
         if unit == 's':  # seconds
             return value
-        elif unit == 'm':  # minutes to seconds
+        if unit == 'm':  # minutes to seconds
             return value * 60
-        elif unit == 'h':  # hours to seconds
+        if unit == 'h':  # hours to seconds
             return value * 3600
-        else:
-            raise ValueError(f"Unsupported time unit: {unit}")
+        
+        raise ValueError(f"Unsupported time unit: {unit}")
 
 
 class FileBasedAppConfig(AppConfig):
+    """App configuration that is loaded from a file"""
     def __init__(self, config_file, watch_for_changes = True):
         super().__init__()
         self.file_path = Path(config_file).resolve()
@@ -249,12 +295,14 @@ class FileBasedAppConfig(AppConfig):
             self.enable_watchdog()
 
     def reload_function(self):
-        logger.info(f"Loading app configuration from {self.file_path}")
-        with open(self.file_path, 'r') as file:
+        """Reload the configuration from the file"""
+        logger.info("Loading app configuration from %s", self.file_path)
+        with open(self.file_path, 'r', encoding='utf-8') as file:
             data = yaml.safe_load(file)
             self.apply_from_dict(data)
 
     def enable_watchdog(self):
+        """Enable the watchdog to watch for changes to the configuration file"""
         # Set up the event handler and observer
         file_to_watch = self.file_path
         event_handler = FileChangeHandler(str(file_to_watch), self.reload_function)
@@ -263,15 +311,16 @@ class FileBasedAppConfig(AppConfig):
 
         # Start the observer
         observer.start()
-        logger.info(f"Watching configuration file {file_to_watch} for changes...")
+        logger.info("Watching configuration file %s for changes...", file_to_watch)
         
 
 class FileChangeHandler(FileSystemEventHandler):
+    """Event handler for file changes"""
     def __init__(self, file_path, reload_function):
         self.file_path = file_path
         self.reload_function = reload_function
 
     def on_modified(self, event):
         if event.src_path == self.file_path:
-            logger.info(f"{self.file_path} has been modified, reloading...")
+            logger.info("%s has been modified, reloading...", self.file_path)
             self.reload_function()
