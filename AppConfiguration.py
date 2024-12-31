@@ -1,11 +1,39 @@
-import yaml
+"""
+AppConfiguration module
+This module provides classes and functions to manage the configuration of an application that integrates with an MQTT broker, Frigate API, and other components. It includes support for loading configuration from a YAML file and watching for changes to the configuration file using the watchdog library.
+Classes:
+    MqttConfig: Configuration for the MQTT broker.
+    FrigateConfig: Configuration for the Frigate API.
+    AlertConfig: Configuration for alerts.
+    ZoneAndLabelsConfig: Configuration for zones and labels.
+    ZonesConfig: Configuration for zones.
+    CooldownConfig: Configuration for cooldowns.
+    AlertRulesConfig: Configuration for alerting rules.
+    ObjectTrackingConfig: Configuration for object tracking.
+    LoggingConfig: Configuration for the logger.
+    AIConfig: Configuration for the AI model.
+    AppConfig: Configuration for the application.
+    FileBasedAppConfig: App configuration that is loaded from a file.
+    FileChangeHandler: Event handler for file changes.
+Functions:
+    AppConfig.apply_from_dict(data): Load settings from a dictionary.
+    AppConfig.load_logging_config(data): Load the logging settings.
+    AppConfig.load_tracking_config(data): Load object tracking settings.
+    AppConfig.load_rules_config(data): Load alerting rules.
+    AppConfig.load_alerts_config(data): Load alerts configuration.
+    AppConfig.load_frigate_config(data): Load frigate configuration.
+    AppConfig.load_mqtt_config(data): Load saved configuration for the MQTT.
+    AppConfig.load_ai_config(data): Load AI configuration.
+    AppConfig.parse_duration(duration_str): Parse a duration string into seconds.
+    FileBasedAppConfig.reload_function(): Reload the configuration from the file.
+    FileBasedAppConfig.enable_watchdog(): Enable the watchdog to watch for changes to the configuration file.
+"""
 import logging
-import time
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
 from pathlib import Path
 import re
-from typing import List
+import yaml
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
 
 # Define the classes to map the structure
 logger = logging.getLogger(__name__)

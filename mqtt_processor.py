@@ -1,3 +1,20 @@
+"""
+mqtt_processor.py
+
+This module sets up and runs an MQTT event processor. It reads configuration
+from a specified file, initializes the application configuration, and starts
+an MQTT event receiver to process incoming events.
+
+Modules:
+    logging: Provides logging capabilities.
+    os: Provides a way of using operating system dependent functionality.
+    MqttEventReceiver: Handles receiving events from an MQTT broker.
+    AppConfiguration: Manages application configuration from a file.
+
+Functions:
+    main: Entry point for the application. Reads configuration, initializes
+          the MQTT event receiver, and starts the event loop.
+"""
 import logging
 import os
 

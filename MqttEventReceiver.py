@@ -1,8 +1,21 @@
-import paho.mqtt.client as mqtt
+"""
+This module defines the MqttEventReceiver class, which is responsible for receiving and processing MQTT messages.
+It connects to an MQTT broker, subscribes to a specified topic, and processes incoming messages using the 
+FrigateEventProcessor class. The module also handles publishing messages to the MQTT broker and provides an 
+interactive command-line interface for managing ongoing events.
+Classes:
+    MqttEventReceiver: A class that handles MQTT message reception, processing, and publishing.
+Functions:
+    on_message: Callback when the client receives a message from the server.
+    on_connect: Callback when the client connects to the server.
+    on_disconnect: Callback when the client disconnects from the server.
+    publish_message: Publishes a message to the MQTT broker.
+    connect_and_loop: Connects to the MQTT broker and starts the event loop.
+"""
 import json
 import time
 import logging
-from datetime import datetime
+import paho.mqtt.client as mqtt
 from FrigateEventProcessor import FrigateEventProcessor
 
 from AppConfiguration import AppConfig
@@ -16,7 +29,7 @@ class MqttEventReceiver:
         self.mqtt_client = None
 
     # Callback when the client receives a message from the server.
-    def on_message(self, client, userdata, msg):
+    def on_message(self, _client, _userdata, msg):
         """Callback when the client receives a message from the server."""
         try:
             # Decode the message payload
@@ -31,19 +44,19 @@ class MqttEventReceiver:
         except json.JSONDecodeError:
             logger.warning("Failed to decode message as JSON from topic %s: %s", msg.topic, message)
 
-    def on_connect(self, client, userdata, flags, rc, properties):
-            """Callback when the client connects to the server."""
-            logger.info("MQTT session is connected: %s", rc)
+    def on_connect(self, client, _userdata, _flags, rc, _properties):
+        """Callback when the client connects to the server."""
+        logger.info("MQTT session is connected: %s", rc)
 
-            # Subscribe to the topic for events
-            topic = self.config.mqtt.listen_topic
-            logger.info("Subscribing to topic %s", topic)
-            client.subscribe(topic)
+        # Subscribe to the topic for events
+        topic = self.config.mqtt.listen_topic
+        logger.info("Subscribing to topic %s", topic)
+        client.subscribe(topic)
 
-            # Publish "online" message when successfully connected
-            client.publish(self.config.mqtt.alert_topic + "/status", "online", retain=True)
+        # Publish "online" message when successfully connected
+        client.publish(self.config.mqtt.alert_topic + "/status", "online", retain=True)
 
-    def on_disconnect(self, client, userdata, flags, rc, properties):
+    def on_disconnect(self, _client, _userdata, _flags, rc, _properties):
         """Callback when the client disconnects from the server."""
         if rc != 0:
             logger.warning("MQTT session is disconnected: %s", rc)
