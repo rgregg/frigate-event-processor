@@ -40,12 +40,10 @@ class GoogleVision:
             return None
         
         image_data = image_response.content
-        prompt = self.config.prompt or """Very briefly describe what you see in this image from my security camera. Your
-        message needs to be short to fit in a phone notification. Don't describe
-        stationary objects or buildings. Focus on people, animals, or actions."""
+        prompt = self.config.prompt or """Describe this image"""
 
         if self.config.inject_detection:
-            prompt += f" The image came from the {location} and detected {detection}. Start your response with the name of the location."
+            prompt += f" Camera name was '{location}'. This image was labeled with '{detection}'."
         
         request = [{'mime_type': self.config.snapshot_format, 'data': base64.b64encode(image_data).decode('utf-8')}, prompt]
         logger.debug("API request parameters: %s", request)
@@ -53,9 +51,6 @@ class GoogleVision:
             response = self.model.generate_content(request)
             logger.debug("API response: %s", response)
             return response.text
-        except genai.GenerativeAIError as exc:
-            logger.warning("Failed to process event %s with AI model: %s: %s", event.id, self.config.ai_model, exc)
-            return None
         except Exception as exc:
             logger.error("Failed to process event %s with AI model: %s: %s", event.id, self.config.ai_model, exc)
             return None
