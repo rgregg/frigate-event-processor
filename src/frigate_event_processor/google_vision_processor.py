@@ -1,7 +1,10 @@
+"""Module to process images using Google Vision API."""
+
+import logging
 import base64
 import google.generativeai as genai
 import httpx
-import logging
+
 from .app_configuration import AIConfig
 
 logger = logging.getLogger(__name__)
@@ -14,6 +17,7 @@ class GoogleVision:
             logger.debug("Initializing Google AI with API_KEY: %s", ai_config.api_key)
             genai.configure(api_key=ai_config.api_key)
             ai_model = ai_config.ai_model
+            logger.debug("Specified model: %s", ai_model)
             self.model = genai.GenerativeModel(model_name=ai_model)
             logger.info("Google AI model initialized: %s", ai_model)
 

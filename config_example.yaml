@@ -66,9 +66,9 @@ logging:
   max_keep: 10    # number of log files to keep
 
 ai:
-  enabled: true   # enable AI processing with Google Vision API
+  enabled: true   # enable AI processing with Google Gemini API
   api_key: your-api-key-here
-  model: gemini-1.5-flash
+  ai_model: gemini-1.5-flash
   prompt: >
         Very briefly describe what you see in this image from my security camera. Your
         message needs to be short to fit in a phone notification. Don't describe
