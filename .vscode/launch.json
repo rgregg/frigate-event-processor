@@ -2,17 +2,16 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python Debugger: Current Program",
+            "name": "Python Debugger: Frigate Event Processor",
             "type": "debugpy",
             "request": "launch",
-            "program": "mqtt_processor.py",
-            "console": "integratedTerminal"
-        },
-        {
-            "name": "Python Debugger: Python File",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${file}"
+            "module": "src.frigate_event_processor.main",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src"
+            },
         }
     ]
 }

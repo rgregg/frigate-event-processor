@@ -6,13 +6,14 @@ from logging.handlers import RotatingFileHandler
 from prettytable import PrettyTable
 from .app_configuration import AppConfig, ZonesConfig
 from .google_vision_processor import GoogleVision
+from .mqtt_event_receiver import MqttConnectionClient, MqttEventProcessor
 
 logger = logging.getLogger(__name__)
 
-class FrigateEventProcessor:
+class FrigateEventProcessor(MqttEventProcessor):
     """Main class for processing events from Frigate via MQTT"""
 
-    def __init__(self, config: AppConfig, alert_publish_func):
+    def __init__(self, config: AppConfig):
         self.ongoing_events = dict()
         self.config = config
         self.configure_logging()
@@ -20,9 +21,9 @@ class FrigateEventProcessor:
         self.camera_notification_history = dict()
         self.label_notification_history = dict()
         self.event_processing_queue = dict()
-        self.alert_publish_func = alert_publish_func
+        #self.alert_publish_func = alert_publish_func
         self.ai_processor = GoogleVision(config.ai)
-
+        self.disable_input = False
 
     def process_event(self, event):
         """ Main loop for processing events """
@@ -155,8 +156,6 @@ class FrigateEventProcessor:
             del self.ongoing_events[id]
         except KeyError:
             pass
-        
-
 
     def evaluate_alert(self, before, after):
         """
@@ -239,8 +238,7 @@ class FrigateEventProcessor:
             return False
                 
         return True
-    
-    
+        
     def is_event_past_cooldown(self, event):
         """ Check to see if this event meets the required cooldown time in the configuration """
         cooldown = self.config.alert_rules.cooldown
@@ -367,6 +365,50 @@ class FrigateEventProcessor:
             table.add_row([key, event.camera, ", ".join(event.current_zones), event.label, event.sub_label, "{:.2f}".format(event.score), event.duration])
 
         logger.info("\n%s", str(table))
+
+    # Abstract methods from MqttEventProcessor
+    def process_mqtt_event(self, client, topic:str, data):
+        self.process_event(data)
+
+    def process_mqtt_loop(self, _client)->int:
+        loop = True
+        while loop:
+            try:
+                if self.disable_input:
+                    return 1
+
+                command = input("")
+                if command.lower() == "p":
+                    self.print_ongoing_events()
+                elif command.lower() == "q":
+                    loop = False
+                elif command.lower().startswith("a "):
+                    self.generate_alert_for_event_id(command[2:])
+                elif command.lower().startswith("i "):
+                    self.log_info_event_id(command[2:])
+                elif command.lower().startswith("n "):
+                    event = self.get_ongoing_event(command[2:])
+                    message = self.generate_notification(event)
+                    logger.info(message)
+                elif command.lower().startswith("t "):
+                    event = self.get_ongoing_event(command[2:])
+                    url = self.get_snapshot_url(event)
+                    logger.info("Snapshot URL: %s", url)
+                else:
+                    logger.info("Unrecognized command. Expected: [p, q, a <id>, i <id>, n <id>, t <id>]")
+            except EOFError:
+                logger.info("App received an EOF from stdin - disabling interactive mode")
+                self.disable_input = True
+            except KeyboardInterrupt:
+                logger.info("App received signal to shudown.")
+                loop = False        
+        return 1
+    
+    def wants_json(self, _client, _topic:str)->bool:
+        return True
+    
+    def clean_up(self, _client):
+        self.clear_pending_notifications()
 
 
 class EventProcessingQueue:

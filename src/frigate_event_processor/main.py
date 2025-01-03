@@ -18,7 +18,8 @@ Functions:
 import logging
 import os
 
-from .mqtt_event_receiver import MqttEventReceiver
+from .mqtt_event_receiver import MqttConnectionClient
+from .frigate_event_processor import FrigateEventProcessor
 from .app_configuration import FileBasedAppConfig
 
 logger = logging.getLogger(__name__)
@@ -26,15 +27,16 @@ logger = logging.getLogger(__name__)
 # Main function
 def main():
     """Entry point for app"""
-    path = os.getenv('CONFIG_FILE', './config.yaml')    
+    path = os.getenv('CONFIG_FILE', './config.yaml')
     logger.info("Reading configuration from %s", path)
 
     config = FileBasedAppConfig(path, True)
 
     logger.debug("Configuration: %s", config)
 
-    receiver = MqttEventReceiver(config)
-    receiver.connect_and_loop()
+    processor = FrigateEventProcessor(config)
+    client = MqttConnectionClient(config.mqtt, True, processor)
+    client.connect_and_loop()
 
 if __name__ == '__main__':
     main()
