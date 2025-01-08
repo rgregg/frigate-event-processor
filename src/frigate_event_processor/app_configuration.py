@@ -147,13 +147,17 @@ class AlertRulesConfig:
     def __repr__(self):
         return f"AlertRules(min_dur={self.minimum_duration_seconds}s, snapshots={self.require_snapshot}, video={self.require_video}, cooldown={self.cooldown})"
 
-class ObjectTrackingConfig:
-    """Configuration for object tracking"""
+class EventTrackingConfig:
+    """Configuration for event tracking"""
     def __init__(self):
-        self.enabled = True
+        self.enabled = False
+        self.mqtt_topic = None
+        self.home_assistant = False
+        self.discovery_base_topic = "homeassistant"
+        self.home_assistant_url = None
 
     def __repr__(self):
-        return f"ObjectTracking(enabled={self.enabled})"
+        return f"EventTracking(enabled={self.enabled}, mqtt_topic={self.mqtt_topic})"
     
 class LoggingConfig:
     """Configuration for the logger"""
@@ -183,30 +187,18 @@ class AppConfig:
         self.frigate = FrigateConfig()
         self.alerts = []
         self.alert_rules = AlertRulesConfig()
-        self.object_tracking = ObjectTrackingConfig()
+        self.event_tracking = EventTrackingConfig()
         self.logging = LoggingConfig()
         self.ai = AIConfig()
 
     def apply_from_dict(self, data):
         """Load settings from a dictionary"""
-        # Parse mqtt
         self.load_mqtt_config(data)
-
-        # Parse frigate
         self.load_frigate_config(data)
-
-        # Parse alerts/cameras
         self.load_alerts_config(data)
-
-        # Parse alert_rules
         self.load_rules_config(data)
-        
-        # Parse object tracking
         self.load_tracking_config(data)
-
-        # Parse logger
         self.load_logging_config(data)
-
         self.load_ai_config(data)
 
     def load_logging_config(self, data):
@@ -220,11 +212,16 @@ class AppConfig:
 
     def load_tracking_config(self, data):
         """Load object tracking settings"""
-        tracking = data.get('object_tracking')
+        tracking = data.get('event_tracking')
         if tracking is not None:
-            self.object_tracking.enabled = tracking.get('enabled')
+            self.event_tracking.enabled = tracking.get('enabled') or False
+            self.event_tracking.mqtt_topic = tracking.get('mqtt_topic')
+            self.event_tracking.home_assistant = tracking.get('home_assistant') or False
+            self.event_tracking.discovery_base_topic = tracking.get('discovery_base_topic') or "homeassistant"
+            self.event_tracking.home_assistant_url = tracking.get('home_assistant_url')
         else:
-            self.object_tracking.enabled = True
+            self.event_tracking.enabled = False
+            self.event_tracking.home_assistant = False
 
     def load_rules_config(self, data):
         """Load alerting rules"""
@@ -289,7 +286,7 @@ class AppConfig:
             self.ai.inject_detection = ai.get('inject_detection') or True
 
     def __repr__(self):
-        return (f"AppConfig(mqtt={self.mqtt}, frigate={self.frigate}, alerts={self.alerts}, alert_rules={self.alert_rules}, object_tracking={self.object_tracking}, logging={self.logging}, ai={self.ai})")
+        return (f"AppConfig(mqtt={self.mqtt}, frigate={self.frigate}, alerts={self.alerts}, alert_rules={self.alert_rules}, event_tracking={self.event_tracking}, logging={self.logging}, ai={self.ai})")
     
     def parse_duration(self, duration_str):
         """Parse a duration string into seconds"""

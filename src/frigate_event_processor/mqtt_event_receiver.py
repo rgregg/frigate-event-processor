@@ -18,6 +18,7 @@ import logging
 import paho.mqtt.client as mqtt
 from .frigate_event_processor import FrigateEventProcessor
 from .app_configuration import AppConfig
+from .hass_discovery import HomeAssistantDiscovery, DiscoverableSensor, DiscoverableImage, DiscoverableDevice, Availability, SensorType
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +87,9 @@ class MqttEventReceiver:
 
         self.mqtt_client = client
 
-        # Starts processing the loop on another thread        
+        self.register_home_assistant_discovery()
+
+        # Starts processing the loop on another thread
         client.loop_start()
 
         loop = True
@@ -132,3 +135,41 @@ class MqttEventReceiver:
         self.processor.clear_pending_notifications()
 
         logger.info("Disconnected.")
+
+
+    def register_home_assistant_discovery(self):
+        """ Register the Home Assistant discovery for this service """
+        if not self.config.event_tracking.home_assistant:
+            return
+        
+        hass_discovery = HomeAssistantDiscovery(self.config)
+        
+
+        # Register the MQTT discovery for the event tracking
+        camera_names = [alert.camera for alert in self.config.alerts]
+        for camera in camera_names:
+
+            device = DiscoverableDevice(f"Frigate Processor {camera} ", [f"frigate_event_processor_{camera}"], "Ryan Gregg", "frigate-event-processor", "1.0", "1.0")
+
+            sensor_event_id = DiscoverableSensor(f"{camera}_event_id",
+                                        f"Camera {camera} Event ID")
+            #sensor_event_id.icon = "mdi:camera"
+            sensor_event_id.value_template = "{{ value.event_id }}"
+            sensor_event_id.availability = Availability(self.config.mqtt.alert_topic + "/status")
+            sensor_event_id.icon = "mdi:star-box"
+            sensor_event_id.device = device
+            sensor_event_id.state_topic = f"{self.config.event_tracking.mqtt_topic}/{camera}"
+            sensor_event_id.sensor_type = SensorType.SENSOR
+            hass_discovery.publish_sensor(sensor_event_id, self.mqtt_client)
+
+            sensor_event_image = DiscoverableImage(f"{camera}_event_image", f"Camera {camera} Event Snapshot")
+            sensor_event_image.icon = "mdi:image-area"
+            sensor_event_image.url_template = "{{ value.image_url }}"
+            sensor_event_image.availability = Availability(self.config.mqtt.alert_topic + "/status")
+            sensor_event_image.device = device
+            sensor_event_image.url_topic = f"{self.config.event_tracking.mqtt_topic}/{camera}"
+            hass_discovery.publish_sensor(sensor_event_image, self.mqtt_client)
+        
+        logger.info("Home Assistant Discovery registration complete.")
+
+        
