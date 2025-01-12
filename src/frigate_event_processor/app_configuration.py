@@ -30,10 +30,7 @@ Functions:
 """
 import logging
 from pathlib import Path
-import re
-import yaml
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
+from .app_config_utils import BaseAppConfig, ParserUtilities
 
 # Define the classes to map the structure
 logger = logging.getLogger(__name__)
@@ -41,12 +38,25 @@ logger = logging.getLogger(__name__)
 class MqttConfig:
     """Configuration for the MQTT broker"""
     def __init__(self):
-        self.host = "localhost"
-        self.port = 1883
+        self.host = None
+        self.port = None
         self.username = None
         self.password = None
-        self.listen_topic = "#"
-        self.alert_topic = "alerts/camera_system"
+        self.listen_topic = None
+        self.alert_topic = None
+        self.load_default()
+
+    def load_default(self):
+        self.load_json({})
+
+    def load_json(self, data):
+        """Load saved configuration for the MQTT"""
+        self.host = data.get('host') or "localhost"
+        self.port = data.get('port') or 1883
+        self.listen_topic = data.get('listen_topic') or "#"
+        self.alert_topic = data.get('alert_topic') or "alerts/camera_system"
+        self.username = data.get('username')
+        self.password = data.get('password')
 
     def __repr__(self):
         return f"Mqtt(host={self.host}, username={self.username}, password={self.password}, listen_topic={self.listen_topic}, alert_topic={self.alert_topic})"
@@ -54,9 +64,19 @@ class MqttConfig:
 class FrigateConfig:
     """Configuration for the Frigate API"""
     def __init__(self):
-        self.host = "localhost"
-        self.port = 5000
-        self.use_ssl = False
+        self.host = None
+        self.port = None
+        self.use_ssl = None
+        self.load_default()
+
+    def load_default(self):
+        self.load_json({})
+
+    def load_json(self, data):
+        """Load frigate configuration from a JSON object"""
+        self.host = data.get('host') or "localhost"
+        self.port = data.get('port') or 5000
+        self.use_ssl = data.get('ssl') or False
 
     @property
     def api_base_url(self):
@@ -69,11 +89,26 @@ class FrigateConfig:
 
 class AlertConfig:
     """Configuration for alerts"""
-    def __init__(self, camera):
-        self.camera = camera
+    def __init__(self):
+        self.camera = None
         self.labels = []
         self.enabled = True
         self.zones = ZonesConfig()
+        self.load_default()
+
+    def load_default(self):
+        self.load_json({})
+
+    def load_json(self, data):
+        """Load alert configuration from a JSON object"""
+        self.camera = data.get('camera')
+        self.enabled = data.get('enabled') or True
+        self.labels = data.get('labels') or []
+
+        zones = data.get('zones')
+        if zones is not None:
+            self.zones.ignore_zones = ZonesConfig.parse_zones(zones.get('ignore'))
+            self.zones.require_zones = ZonesConfig.parse_zones(zones.get('require'))
 
     def __repr__(self):
         return f"Alert(camera={self.camera}, objects={self.labels}, enabled={self.enabled}, zones={self.zones})"
@@ -86,7 +121,6 @@ class ZoneAndLabelsConfig:
 
     def __repr__(self):
         return f"ZoneAndLabel(zone={self.zone}, labels={self.labels})"
-
 
 class ZonesConfig:
     """Configuration for zones"""
@@ -129,8 +163,16 @@ class ZonesConfig:
 class CooldownConfig:
     """Configuration for cooldowns"""
     def __init__(self):
-        self.camera_duration_seconds = 0
-        self.label_duration_seconds = 0
+        self.camera_duration_seconds = None
+        self.label_duration_seconds = None
+
+    def load_default(self):
+        self.load_json({})
+
+    def load_json(self, data):
+        """Load the cooldown configuration from a JSON object"""
+        self.camera_duration_seconds = data.get('camera') or 0
+        self.label_duration_seconds = data.get('label') or 0
 
     def __repr__(self):
         return f"Cooldown(camera={self.camera_duration_seconds}, object={self.label_duration_seconds})"
@@ -138,11 +180,28 @@ class CooldownConfig:
 class AlertRulesConfig:
     """Configuration for alerting rules"""
     def __init__(self):
-        self.minimum_duration_seconds = 0
-        self.maximum_duration_seconds = 0
-        self.require_snapshot = False
-        self.require_video = False
+        self.minimum_duration_seconds = None
+        self.maximum_duration_seconds = None
+        self.require_snapshot = None
+        self.require_video = None
         self.cooldown = CooldownConfig()
+        self.load_default()
+
+    def load_default(self):
+        self.load_json({})
+
+    def load_json(self, data):
+        """Load the alerting rules from a JSON object"""
+        self.minimum_duration_seconds = ParserUtilities.parse_duration(data.get('min_event_duration')) 
+        self.maximum_duration_seconds = ParserUtilities.parse_duration(data.get('max_event_duration'))
+        self.require_snapshot = data.get('snapshot') or False
+        self.require_video = data.get('video') or False
+
+        cooldown = data.get('cooldown')
+        if cooldown is not None:
+            self.cooldown.load_json(cooldown)
+        else:
+            self.cooldown.load_default()
 
     def __repr__(self):
         return f"AlertRules(min_dur={self.minimum_duration_seconds}s, snapshots={self.require_snapshot}, video={self.require_video}, cooldown={self.cooldown})"
@@ -150,37 +209,73 @@ class AlertRulesConfig:
 class EventTrackingConfig:
     """Configuration for event tracking"""
     def __init__(self):
-        self.enabled = False
+        self.enabled = None
         self.mqtt_topic = None
-        self.home_assistant = False
-        self.discovery_base_topic = "homeassistant"
+        self.home_assistant = None
+        self.discovery_base_topic = None
         self.home_assistant_url = None
 
+    def load_default(self):
+        self.load_json({})
+
+    def load_json(self, data):
+        """Load the event tracking configuration from a JSON object"""
+        self.enabled = data.get('enabled') or False
+        self.mqtt_topic = data.get('mqtt_topic')
+        self.home_assistant = data.get('home_assistant') or False
+        self.discovery_base_topic = data.get('discovery_base_topic') or "homeassistant"
+        self.home_assistant_url = data.get('home_assistant_url')
+
     def __repr__(self):
-        return f"EventTracking(enabled={self.enabled}, mqtt_topic={self.mqtt_topic})"
-    
+        return (f"EventTracking(enabled={self.enabled}, mqtt_topic={self.mqtt_topic}, "
+            f"home_assistant={self.home_assistant}, discovery_base_topic={self.discovery_base_topic}, "
+            f"home_assistant_url={self.home_assistant_url})")
+
 class LoggingConfig:
     """Configuration for the logger"""
     def __init__(self):
-        self.level = logging.INFO
+        self.level = None
         self.path = None
-        self.rotate = False
-        self.max_keep = 10
+        self.rotate = None
+        self.max_keep = None
+
+    def load_default(self):
+        self.load_json({})
+    
+    def load_json(self, data):
+        """Load the logging configuration from a JSON object"""
+        self.level = data.get('level') or logging.INFO
+        self.path = data.get('path') or None
+        self.rotate = data.get('rotate') or False
+        self.max_keep = data.get('max_keep') or 10
 
 class AIConfig:
     """Configuration for the AI model"""
     def __init__(self):
-        self.enabled = False
+        self.enabled = None
         self.api_key = None
         self.ai_model = None
-        self.snapshot_format = "image/jpeg"
+        self.snapshot_format = None
         self.prompt = None
-        self.inject_detection = True
+        self.inject_detection = None
+
+    def load_default(self):
+        self.load_json({})
+
+    def load_json(self, data):
+        """Load the AI configuration from a JSON object"""
+        self.enabled = data.get('enabled') or False
+        self.api_key = data.get('api_key') or None
+        self.ai_model = data.get('ai_model') or "gemini-1.5-flash"
+        self.snapshot_format = data.get('snapshot_format') or "image/jpeg"
+        self.prompt = data.get('prompt') or None
+        self.inject_detection = data.get('inject_detection') or True
 
     def __repr__(self):
         return f"AIConfig(enabled={self.enabled}, api_key={self.api_key}, ai_model={self.ai_model}, snapshot_format={self.snapshot_format}, prompt={self.prompt}, inject_detection={self.inject_detection})"
 
-class AppConfig:
+class AppConfig(BaseAppConfig):
+
     """Configuration for the application"""
     def __init__(self):
         self.mqtt = MqttConfig()
@@ -193,159 +288,73 @@ class AppConfig:
 
     def apply_from_dict(self, data):
         """Load settings from a dictionary"""
-        self.load_mqtt_config(data)
-        self.load_frigate_config(data)
-        self.load_alerts_config(data)
-        self.load_rules_config(data)
-        self.load_tracking_config(data)
-        self.load_logging_config(data)
-        self.load_ai_config(data)
+        self.__load_mqtt_config(data)
+        self.__load_frigate_config(data)
+        self.__load_alerts_config(data)
+        self.__load_rules_config(data)
+        self.__load_tracking_config(data)
+        self.__load_logging_config(data)
+        self.__load_ai_config(data)
 
-    def load_logging_config(self, data):
+    def __load_logging_config(self, data):
         """Load the logging settings"""
-        log_config = data.get('logging')
-        if log_config is not None:
-            self.logging.level = log_config.get('level')
-            self.logging.path = log_config.get('path')
-            self.logging.rotate = log_config.get('rotate')
-            self.logging.max_keep = log_config.get('max_keep')
+        config = data.get('logging')
+        if config is not None:
+            self.logging.load_json(config)
+        else:
+            self.logging.load_default()
 
-    def load_tracking_config(self, data):
+    def __load_tracking_config(self, data):
         """Load object tracking settings"""
         tracking = data.get('event_tracking')
         if tracking is not None:
-            self.event_tracking.enabled = tracking.get('enabled') or False
-            self.event_tracking.mqtt_topic = tracking.get('mqtt_topic')
-            self.event_tracking.home_assistant = tracking.get('home_assistant') or False
-            self.event_tracking.discovery_base_topic = tracking.get('discovery_base_topic') or "homeassistant"
-            self.event_tracking.home_assistant_url = tracking.get('home_assistant_url')
+            self.event_tracking.load_json(tracking)
         else:
-            self.event_tracking.enabled = False
-            self.event_tracking.home_assistant = False
+            self.event_tracking.load_default()
 
-    def load_rules_config(self, data):
+    def __load_rules_config(self, data):
         """Load alerting rules"""
         rules = data.get('alert_rules')
         if rules is not None:
-            self.alert_rules.minimum_duration_seconds = self.parse_duration(rules.get('min_event_duration', "0s"))
-            self.alert_rules.maximum_duration_seconds = self.parse_duration(rules.get('max_event_duration', "0s"))
-            self.alert_rules.require_snapshot = rules.get('snapshot', False)
-            self.alert_rules.require_video = rules.get('video', False)
-
-            cooldown = rules.get('cooldown')
-            if cooldown is not None:
-                self.alert_rules.cooldown.camera_duration_seconds = self.parse_duration(cooldown.get('camera', "0s"))
-                self.alert_rules.cooldown.label_duration_seconds = self.parse_duration(cooldown.get('label', "0s"))
+            self.alert_rules.load_json(rules)
         else:
-            self.alert_rules.cooldown.camera_duration_seconds = 0
-            self.alert_rules.cooldown.label_duration_seconds = 0
+            self.alert_rules.load_default()
 
-    def load_alerts_config(self, data):
+    def __load_alerts_config(self, data):
         """Load alerts configuration"""
         alerts = data.get('alerts')
         self.alerts.clear()
         for alert in alerts:
-            new_alert = AlertConfig(alert.get('camera'))
-            new_alert.enabled = alert.get('enabled') or True
-            new_alert.labels = alert.get('labels') or []
-            
-            zones = alert.get('zones')
-            if zones is not None:
-                new_alert.zones.ignore_zones = ZonesConfig.parse_zones(zones.get('ignore'))
-                new_alert.zones.require_zones = ZonesConfig.parse_zones(zones.get('require'))
+            new_alert = AlertConfig()
+            new_alert.load_json(alert)
             self.alerts.append(new_alert)
 
-    def load_frigate_config(self, data):
+    def __load_frigate_config(self, data):
         """Load frigate configuration"""
         frigate = data.get('frigate')
         if frigate is not None:
-            self.frigate.host = frigate.get('host') or "localhost"
-            self.frigate.port = frigate.get('port') or 5000
-            self.frigate.use_ssl = frigate.get('ssl') or False
+            self.frigate.load_json(frigate)
+        else:
+            self.frigate.load_default()
 
-    def load_mqtt_config(self, data):
+    def __load_mqtt_config(self, data):
         """Load saved configuration for the MQTT"""
         mqtt = data.get('mqtt')
         if mqtt is not None:
-            self.mqtt.host = mqtt.get('host') or "localhost"
-            self.mqtt.port = mqtt.get('port') or 1883
-            self.mqtt.listen_topic = mqtt.get('listen_topic') or "#"
-            self.mqtt.alert_topic = mqtt.get('alert_topic') or "alerts/camera_system"
-            self.mqtt.username = mqtt.get('username')
-            self.mqtt.password = mqtt.get('password')
+            self.mqtt.load_json(mqtt)
+        else:
+            self.mqtt.load_default()
     
-    def load_ai_config(self, data):
+    def __load_ai_config(self, data):
         """Load AI configuration"""
         ai = data.get('ai')
         if ai is not None:
-            self.ai.enabled = ai.get('enabled') or False
-            self.ai.api_key = ai.get('api_key') or None
-            self.ai.ai_model = ai.get('ai_model') or "gemini-1.5-pro"
-            self.ai.snapshot_format = ai.get('snapshot_format') or "image/jpeg"
-            self.ai.prompt = ai.get('prompt') or None
-            self.ai.inject_detection = ai.get('inject_detection') or True
+            self.ai.load_json(ai)
+        else:
+            self.ai.load_default()
 
     def __repr__(self):
-        return (f"AppConfig(mqtt={self.mqtt}, frigate={self.frigate}, alerts={self.alerts}, alert_rules={self.alert_rules}, event_tracking={self.event_tracking}, logging={self.logging}, ai={self.ai})")
-    
-    def parse_duration(self, duration_str):
-        """Parse a duration string into seconds"""
-        # Update regex pattern to capture float or integer and unit (s = seconds, m = minutes, h = hours)
-        pattern = r'(\d*\.?\d+)([smh])'
-        match = re.match(pattern, duration_str)
-        
-        if not match:
-            raise ValueError(f"Invalid duration format: {duration_str}")
-        
-        value, unit = match.groups()
-        value = float(value)  # Convert value to float to handle both integers and floats
-        
-        if unit == 's':  # seconds
-            return value
-        if unit == 'm':  # minutes to seconds
-            return value * 60
-        if unit == 'h':  # hours to seconds
-            return value * 3600
-        
-        raise ValueError(f"Unsupported time unit: {unit}")
+        return (f"AppConfig(mqtt={self.mqtt}, frigate={self.frigate}, alerts={self.alerts}, ", 
+                f"alert_rules={self.alert_rules}, event_tracking={self.event_tracking}, ", 
+                f"logging={self.logging}, ai={self.ai})")
 
-
-class FileBasedAppConfig(AppConfig):
-    """App configuration that is loaded from a file"""
-    def __init__(self, config_file, watch_for_changes = True):
-        super().__init__()
-        self.file_path = Path(config_file).resolve()
-        self.reload_function()
-        if watch_for_changes:
-            self.enable_watchdog()
-
-    def reload_function(self):
-        """Reload the configuration from the file"""
-        logger.info("Loading app configuration from %s", self.file_path)
-        with open(self.file_path, 'r', encoding='utf-8') as file:
-            data = yaml.safe_load(file)
-            self.apply_from_dict(data)
-
-    def enable_watchdog(self):
-        """Enable the watchdog to watch for changes to the configuration file"""
-        # Set up the event handler and observer
-        file_to_watch = self.file_path
-        event_handler = FileChangeHandler(str(file_to_watch), self.reload_function)
-        observer = Observer()
-        observer.schedule(event_handler, path=str(file_to_watch.parent), recursive=False)
-
-        # Start the observer
-        observer.start()
-        logger.info("Watching configuration file %s for changes...", file_to_watch)
-        
-
-class FileChangeHandler(FileSystemEventHandler):
-    """Event handler for file changes"""
-    def __init__(self, file_path, reload_function):
-        self.file_path = file_path
-        self.reload_function = reload_function
-
-    def on_modified(self, event):
-        if event.src_path == self.file_path:
-            logger.info("%s has been modified, reloading...", self.file_path)
-            self.reload_function()

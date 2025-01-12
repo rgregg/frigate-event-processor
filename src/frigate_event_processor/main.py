@@ -19,9 +19,14 @@ import logging
 import os
 
 from .mqtt_event_receiver import MqttEventReceiver
-from .app_configuration import FileBasedAppConfig
+from .app_configuration import AppConfig
+from .app_config_utils import FileBasedAppConfig
+from .docker_health import DockerHealthCheck
 
 logger = logging.getLogger(__name__)
+
+health_check = None
+mqtt_receiver = None
 
 # Main function
 def main():
@@ -29,12 +34,38 @@ def main():
     path = os.getenv('CONFIG_FILE', './config.yaml')    
     logger.info("Reading configuration from %s", path)
 
-    config = FileBasedAppConfig(path, True)
+    config = AppConfig()
+    file_config = FileBasedAppConfig(config, path, True)
+    logger.debug("Configuration: %s", file_config.config)
 
-    logger.debug("Configuration: %s", config)
+    mqtt_receiver = MqttEventReceiver(file_config.config)
+    
+    # Start the health check if enabled
+    if DockerHealthCheck.health_check_enabled():
+        health_check = DockerHealthCheck(config.docker_health_check, mqtt_receiver)
+        health_check.start()
 
-    receiver = MqttEventReceiver(config)
-    receiver.connect_and_loop()
+    # Start the MQTT event receiver (blocking)
+    try:
+        mqtt_receiver.connect_and_loop()
+    except KeyboardInterrupt:
+        logger.info("Shutting down MQTT event receiver")
+        mqtt_receiver.disconnect()
+        if health_check is not None:
+            health_check.stop()
+
+
+
+def health_check_func() -> bool:
+    """
+    Custom health check function for the DockerHealthCheck.
+
+    :return: True if the application is healthy, False otherwise
+    """
+    if mqtt_receiver is None or not mqtt_receiver.is_connected:
+        return False
+        
+    return True
 
 if __name__ == '__main__':
     main()

@@ -19,16 +19,29 @@ import paho.mqtt.client as mqtt
 from .frigate_event_processor import FrigateEventProcessor
 from .app_configuration import AppConfig
 from .hass_discovery import HomeAssistantDiscovery, DiscoverableSensor, DiscoverableImage, DiscoverableDevice, DeviceClass
+from .docker_health import BaseHealthCheck
 
 logger = logging.getLogger(__name__)
 
-class MqttEventReceiver:
+class MqttEventReceiver(BaseHealthCheck):
     """A class that handles MQTT message reception, processing, and publishing."""
     
     def __init__(self, config:AppConfig):
         self.config = config
         self.processor = FrigateEventProcessor(config, self.publish_message)
         self.mqtt_client = None
+
+    @property
+    def is_connected(self):
+        """Returns True if the MQTT client is connected."""
+        return self.mqtt_client.is_connected()
+    
+    def is_healthy(self):
+        if self.mqtt_client is None:
+            return False
+        if not self.mqtt_client.is_connected():
+            return False
+        return True
 
     # Callback when the client receives a message from the server.
     def on_message(self, _client, _userdata, msg):
@@ -144,6 +157,14 @@ class MqttEventReceiver:
 
         logger.info("Disconnected.")
 
+
+    def disconnect(self):
+        """Disconnects the MQTT client."""
+        if self.mqtt_client:
+            self.mqtt_client.loop_stop()
+            self.mqtt_client.disconnect()
+        if self.processor:
+            self.processor.clear_pending_notifications()
 
     def register_home_assistant_discovery(self):
         """ Register the Home Assistant discovery for this service """
