@@ -18,7 +18,7 @@ import logging
 import paho.mqtt.client as mqtt
 from .frigate_event_processor import FrigateEventProcessor
 from .app_configuration import AppConfig
-from .hass_discovery import HomeAssistantDiscovery, DiscoverableSensor, DiscoverableImage, DiscoverableDevice, Availability, SensorType, DiscoverableText
+from .hass_discovery import HomeAssistantDiscovery, DiscoverableSensor, DiscoverableImage, DiscoverableDevice, DeviceClass
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +157,8 @@ class MqttEventReceiver:
         processor_available.state_topic = self.config.mqtt.alert_topic + "/status"
         processor_available.icon = "mdi:server"
         processor_available.device = processor_device
+        processor_available.device_class = DeviceClass.ENUM
+        processor_available.options = ["online", "offline"]
         hass_discovery.publish_sensor(processor_available, self.mqtt_client)
 
         # Register the MQTT discovery for the event tracking

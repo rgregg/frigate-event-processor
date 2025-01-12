@@ -93,6 +93,7 @@ class SensorType(Enum):
 
 class DeviceClass(Enum):
     """Enumeration of device classes"""
+    ENUM = "enum"
     BATTERY = "battery"
     CONNECTIVITY = "connectivity"
     CURRENT = "current"
@@ -184,6 +185,7 @@ class DiscoverableSensor(DiscoverableEntityBase):
         self.unit_of_measurement = None
         self.value_template = None
         self.state_topic = None
+        self.options = None
 
     @property
     def device_class(self) -> DeviceClass:
@@ -213,6 +215,7 @@ class DiscoverableSensor(DiscoverableEntityBase):
             "unit_of_measurement": self.unit_of_measurement,
             "value_template": self.value_template,
             "state_topic": self.state_topic,
+            "options": self.options,
         }
         base_dict.update(super().to_dict())
         return self.remove_none_values(base_dict)
