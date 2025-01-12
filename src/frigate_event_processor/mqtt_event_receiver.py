@@ -18,6 +18,7 @@ import logging
 import paho.mqtt.client as mqtt
 from .frigate_event_processor import FrigateEventProcessor
 from .app_configuration import AppConfig
+from .hass_discovery import HomeAssistantDiscovery, DiscoverableSensor, DiscoverableImage, DiscoverableDevice, Availability, SensorType, DiscoverableText
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +87,9 @@ class MqttEventReceiver:
 
         self.mqtt_client = client
 
-        # Starts processing the loop on another thread        
+        self.register_home_assistant_discovery()
+
+        # Starts processing the loop on another thread
         client.loop_start()
 
         loop = True
@@ -109,13 +112,19 @@ class MqttEventReceiver:
                     elif command.lower().startswith("n "):
                         event = self.processor.get_ongoing_event(command[2:])
                         message = self.processor.generate_notification(event)
-                        logger.info(message)
+                        logger.info("Response %s", message)
                     elif command.lower().startswith("t "):
                         event = self.processor.get_ongoing_event(command[2:])
                         url = self.processor.get_snapshot_url(event)
                         logger.info("Snapshot URL: %s", url)
                     else:
-                        logger.info("Unrecognized command. Expected: [p, q, a <id>, i <id>, n <id>, t <id>]")
+                        option_text = ("p: Print ongoing events\n",
+                                       "q: Quit\n",
+                                       "a <id>: Generate alert for event ID\n",
+                                       "i <id>: Log info for event ID\n",
+                                       "n <id>: Generate notification for event ID\n",
+                                       "t <id>: Get snapshot URL for event ID\n")
+                        logger.info("Unrecognized command. Expected:\n%s", option_text)
             except EOFError:
                 logger.info("App received an EOF from stdin - disabling interactive mode")
                 skip_input = True
@@ -132,3 +141,51 @@ class MqttEventReceiver:
         self.processor.clear_pending_notifications()
 
         logger.info("Disconnected.")
+
+
+    def register_home_assistant_discovery(self):
+        """ Register the Home Assistant discovery for this service """
+        if not self.config.event_tracking.home_assistant:
+            return
+        
+        hass_discovery = HomeAssistantDiscovery(self.config)
+
+        processor_device = DiscoverableDevice("Frigate Event Processor", ["frigate_event_processor"], "Frigate Event Processor", "frigate-event-processor", "1.0", "1.0")
+        processor_available = DiscoverableSensor("processor_available", "Processor Running")
+        processor_available.state_topic = self.config.mqtt.alert_topic + "/status"
+        processor_available.icon = "mdi:server"
+        processor_available.device = processor_device
+        hass_discovery.publish_sensor(processor_available, self.mqtt_client)
+
+        # Register the MQTT discovery for the event tracking
+        camera_names = [alert.camera for alert in self.config.alerts]
+        for camera in camera_names:
+
+            device = DiscoverableDevice(f"Event Processor {camera.title()} ", [f"frigate_event_processor_{camera}"], "Frigate Event Processor", "frigate-event-processor", "1.0", "1.0")
+
+            sensor_event_id = DiscoverableSensor(f"{camera}_event_id",
+                                        "Last Event ID")
+            sensor_event_id.value_template = "{{ value_json.event_id }}"
+            sensor_event_id.state_topic = f"{self.config.event_tracking.mqtt_topic}/{camera}"
+            sensor_event_id.icon = "mdi:star-box"
+            sensor_event_id.device = device
+            hass_discovery.publish_sensor(sensor_event_id, self.mqtt_client)
+
+            sensor_event_image = DiscoverableImage(f"{camera}_event_image", 
+                                                   "Last Snapshot")
+            sensor_event_image.icon = "mdi:image-area"
+            sensor_event_image.url_template = "{{ value_json.image_url }}"
+            sensor_event_image.device = device
+            sensor_event_image.url_topic = f"{self.config.event_tracking.mqtt_topic}/{camera}"
+            hass_discovery.publish_sensor(sensor_event_image, self.mqtt_client)
+
+            sensor_message = DiscoverableSensor(f"{camera}_message", 
+                                              "Last Event Description")
+            sensor_message.value_template = "{{ value_json.message }}"
+            sensor_message.state_topic = f"{self.config.event_tracking.mqtt_topic}/{camera}"
+            sensor_message.device = device
+            hass_discovery.publish_sensor(sensor_message, self.mqtt_client)
+        
+        logger.info("Home Assistant Discovery registration complete.")
+
+        

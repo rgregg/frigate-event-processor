@@ -23,7 +23,6 @@ class FrigateEventProcessor:
         self.alert_publish_func = alert_publish_func
         self.ai_processor = GoogleVision(config.ai)
 
-
     def process_event(self, event):
         """ Main loop for processing events """
         event_type = event.get('type')
@@ -37,7 +36,7 @@ class FrigateEventProcessor:
 
     def clear_pending_notifications(self):
         """ Cancel any pending timers queued """
-        for index, (key, value) in enumerate(self.event_processing_queue.items()):
+        for _index, (_key, value) in enumerate(self.event_processing_queue.items()):
             value.cancel()
         self.event_processing_queue.clear()
         
@@ -118,6 +117,21 @@ class FrigateEventProcessor:
         logger.info("ALERT: %s", alert_payload)
         self.alert_publish_func(self.config.mqtt.alert_topic + "/alert", alert_payload)
 
+        if self.config.event_tracking.enabled:
+            self.publish_event_tracking(alert)
+
+    def publish_event_tracking(self, alert):
+        """ Publish the event to the event tracking MQTT topic """
+        camera = alert.camera
+        state_topic = f"{self.config.event_tracking.mqtt_topic}/{camera}"
+        payload = json.dumps({
+            "event_id": alert.event_id,
+            "image_url": f"{self.config.event_tracking.home_assistant_url}/api/frigate/notifications/{alert.event_id}/snapshot.jpg",
+            "message": alert.message
+        })
+
+        self.alert_publish_func(state_topic, payload)
+
     def generate_alert_for_event_id(self, event_id):
         """ Generate the alert content based on an event ID. Used for manually triggering alerts. """
         logger.info("Manually processing %s for alert", event_id)
@@ -142,21 +156,19 @@ class FrigateEventProcessor:
     def process_end_event(self, data):
         """ Indicates that the event has ended and the object
             is no longer detected in the video """
-        id = data.get('id')
-        logger.info("END: Event %s ended", id)
+        event_id = data.get('id')
+        logger.info("END: Event %s ended", event_id)
 
-        existing_queue = self.event_processing_queue.get(id)
+        existing_queue = self.event_processing_queue.get(event_id)
         if existing_queue:
             existing_queue.timer.cancel()
             del self.event_processing_queue[existing_queue.id]
-            logger.info("Canceled processing %s since it ended before the min_duration", id)
+            logger.info("Canceled processing %s since it ended before the min_duration", event_id)
 
         try:
             del self.ongoing_events[id]
         except KeyError:
             pass
-        
-
 
     def evaluate_alert(self, before, after):
         """
@@ -267,7 +279,6 @@ class FrigateEventProcessor:
             return False
 
         return True
-
     
     def generate_location_string(self, event):
         """ Generate the location string for this event based on the camera name and current zones """
@@ -363,10 +374,14 @@ class FrigateEventProcessor:
         table = PrettyTable()
         table.field_names = ["ID", "Camera", "Zones", "Label", "SubLabel", "Score", "Duration"]
 
-        for index, (key, event) in enumerate(self.ongoing_events.items()):
+        for _index, (key, event) in enumerate(self.ongoing_events.items()):
             table.add_row([key, event.camera, ", ".join(event.current_zones), event.label, event.sub_label, "{:.2f}".format(event.score), event.duration])
 
         logger.info("\n%s", str(table))
+                          
+
+        
+            
 
 
 class EventProcessingQueue:
@@ -377,9 +392,6 @@ class EventProcessingQueue:
     
     def add_to_queue(self, event):
         self.queue.append(event)
-
-
-
 
 class EventData:
     def __init__(self, data):
