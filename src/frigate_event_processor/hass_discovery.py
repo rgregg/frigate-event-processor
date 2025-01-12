@@ -115,7 +115,8 @@ class StateClass(Enum):
 
 
 class DiscoverableEntityBase:
-    """Class to represent a sensor that can be discovered by Home Assistant"""
+    """Class to represent common entity components for Home Assistant"""
+
     def __init__(self, unique_id:str, name:str):
         self._sensor_type = None
         self.name = name
@@ -173,6 +174,8 @@ class DiscoverableEntityBase:
         return {key: value for key, value in dictionary.items() if value is not None}
 
 class DiscoverableSensor(DiscoverableEntityBase):
+    """Class to represent a sensor that can be discovered by Home Assistant"""
+
     def __init__(self, unique_id:str, name:str):
         super().__init__(unique_id, name)
         self._sensor_type = SensorType.SENSOR
@@ -215,6 +218,8 @@ class DiscoverableSensor(DiscoverableEntityBase):
         return self.remove_none_values(base_dict)
 
 class DiscoverableText(DiscoverableEntityBase):
+    """Class to represent a text_input sensor that can be discovered by Home Assistant"""
+
     def __init__(self, unique_id:str, name:str):
         super().__init__(unique_id, name)
         self._sensor_type = SensorType.TEXT
@@ -237,6 +242,8 @@ class DiscoverableText(DiscoverableEntityBase):
 
 
 class DiscoverableImage(DiscoverableEntityBase):
+    """Class to represent an image sensor that can be discovered by Home Assistant"""
+    
     def __init__(self, unique_id:str, name:str):
         super().__init__(unique_id, name)
         self._sensor_type = SensorType.IMAGE
