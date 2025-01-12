@@ -42,7 +42,7 @@ def main():
     
     # Start the health check if enabled
     if DockerHealthCheck.health_check_enabled():
-        health_check = DockerHealthCheck(config.docker_health_check, mqtt_receiver)
+        health_check = DockerHealthCheck(mqtt_receiver)
         health_check.start()
 
     # Start the MQTT event receiver (blocking)
