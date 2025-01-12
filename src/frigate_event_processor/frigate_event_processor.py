@@ -119,14 +119,15 @@ class FrigateEventProcessor:
 
         if self.config.event_tracking.enabled:
             self.publish_event_tracking(alert)
-            self.alert_publish_func(f"{self.config.event_tracking.mqtt_topic}/{alert.camera}", alert.event_id)
 
     def publish_event_tracking(self, alert):
+        """ Publish the event to the event tracking MQTT topic """
         camera = alert.camera
         state_topic = f"{self.config.event_tracking.mqtt_topic}/{camera}"
         payload = json.dumps({
             "event_id": alert.event_id,
             "image_url": f"{self.config.event_tracking.home_assistant_url}/api/frigate/notifications/{alert.event_id}/snapshot.jpg",
+            "message": alert.message
         })
 
         self.alert_publish_func(state_topic, payload)

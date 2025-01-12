@@ -1,13 +1,22 @@
 mqtt:
   host: homeassistant.lan
   port: 1883
-  listen_topic: frigate/events
-  alert_topic: alerts/camera_system
+  listen_topic: frigate/events        # Topic to listen for events on, published by Frigate
+  alert_topic: alerts/camera_system   # Topic where qualified alerts are published for notifications
 
 frigate:
-  host: homeassistant.lan
+  host: homeassistant.lan             # Address for the Frigate API, use the unauthenticated address
   port: 5000
   ssl: false
+
+# record events into MQTT sensors that can be displayed in various dashboards or with Home Assistant
+event_tracking:
+  enabled: true                       # Enable reporting event details to MQTT
+  mqtt_topic: frigate_events/cameras  # Topic to publish event details on
+  home_assistant: true                # Enable Home Assistant discovery for camera events
+  discovery_base_topic: homeassistant # Base topic for Home Assistant discovery
+  home_assistant_url: http://homeassistant.lan   # Used for generating image URLs that load using the Frigate API integration
+
 
 alerts:
   - camera: yard

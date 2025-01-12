@@ -70,25 +70,26 @@ class Availability:
 class SensorType(Enum):
     """Enumeration of sensor types"""
     SENSOR = "sensor"
-    BINARY_SENSOR = "binary_sensor"
-    SWITCH = "switch"
-    FAN = "fan"
-    LIGHT = "light"
-    COVER = "cover"
-    CLIMATE = "climate"
-    VACUUM = "vacuum"
-    CAMERA = "camera"
+    # BINARY_SENSOR = "binary_sensor"
+    # SWITCH = "switch"
+    # FAN = "fan"
+    # LIGHT = "light"
+    # COVER = "cover"
+    # CLIMATE = "climate"
+    # VACUUM = "vacuum"
+    # CAMERA = "camera"
     IMAGE = "image"
-    LOCK = "lock"
-    DEVICE_TRACKER = "device_tracker"
-    HUMIDIFIER = "humidifier"
-    AIR_QUALITY = "air_quality"
-    WATER_HEATER = "water_heater"
-    WATER_LEVEL = "water_level"
-    WATER_QUALITY = "water_quality"
-    WINDOW = "window"
-    WINDOW_COVERING = "window_covering"
-    ZONE = "zone"
+    # LOCK = "lock"
+    # DEVICE_TRACKER = "device_tracker"
+    # HUMIDIFIER = "humidifier"
+    # AIR_QUALITY = "air_quality"
+    # WATER_HEATER = "water_heater"
+    # WATER_LEVEL = "water_level"
+    # WATER_QUALITY = "water_quality"
+    # WINDOW = "window"
+    # WINDOW_COVERING = "window_covering"
+    # ZONE = "zone"
+    TEXT = "text"
 
 class DeviceClass(Enum):
     """Enumeration of device classes"""
@@ -107,6 +108,7 @@ class DeviceClass(Enum):
 
 class StateClass(Enum):
     """Enumeration of state classes"""
+    DEFAULT = None
     MEASUREMENT = "measurement"
     TOTAL_INCREASING = "total_increasing"
     TOTAL = "total"
@@ -119,7 +121,7 @@ class DiscoverableEntityBase:
         self.name = name
         self.icon = None
         self.enabled_by_default = True
-        self._availability = Availability("")
+        self._availability = None
         self.device = DiscoverableDevice.empty_device()
         self.unique_id = unique_id
         
@@ -139,7 +141,9 @@ class DiscoverableEntityBase:
 
     @availability.setter
     def availability(self, value):
-        if not isinstance(value, Availability):
+        if value is None:
+            pass
+        elif not isinstance(value, Availability):
             raise ValueError("availability must be an Availability")
         self._availability = value
 
@@ -149,7 +153,7 @@ class DiscoverableEntityBase:
             "name": self.name,
             "icon": self.icon,
             "enabled_by_default": self.enabled_by_default,
-            "availability": self.availability.to_dict(),
+            "availability": self.availability.to_dict() if self.availability else None,
             "device": {
                 "name": self.device.name,
                 "identifiers": self.device.identifiers,
@@ -168,13 +172,11 @@ class DiscoverableEntityBase:
         """Remove keys with None values from a dictionary"""
         return {key: value for key, value in dictionary.items() if value is not None}
 
-
-
 class DiscoverableSensor(DiscoverableEntityBase):
     def __init__(self, unique_id:str, name:str):
         super().__init__(unique_id, name)
         self._sensor_type = SensorType.SENSOR
-        self._state_class = StateClass.MEASUREMENT
+        self._state_class = None
         self._device_class = None
         self.unit_of_measurement = None
         self.value_template = None
@@ -208,6 +210,26 @@ class DiscoverableSensor(DiscoverableEntityBase):
             "unit_of_measurement": self.unit_of_measurement,
             "value_template": self.value_template,
             "state_topic": self.state_topic,
+        }
+        base_dict.update(super().to_dict())
+        return self.remove_none_values(base_dict)
+
+class DiscoverableText(DiscoverableEntityBase):
+    def __init__(self, unique_id:str, name:str):
+        super().__init__(unique_id, name)
+        self._sensor_type = SensorType.TEXT
+        self.value_template = None
+        self.state_topic = None
+        self.command_topic = None
+        self.command_template = None
+
+    def to_dict(self):
+        """Convert the object to a dictionary for JSON serialization"""
+        base_dict = {
+            "value_template": self.value_template,
+            "state_topic": self.state_topic,
+            "command_topic": self.command_topic,
+            "command_template": self.command_template,
         }
         base_dict.update(super().to_dict())
         return self.remove_none_values(base_dict)
