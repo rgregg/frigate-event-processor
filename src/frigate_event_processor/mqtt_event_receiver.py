@@ -23,6 +23,8 @@ from .hass_discovery import HomeAssistantDiscovery, DiscoverableSensor, Discover
 logger = logging.getLogger(__name__)
 
 class MqttEventReceiver:
+    """A class that handles MQTT message reception, processing, and publishing."""
+    
     def __init__(self, config:AppConfig):
         self.config = config
         self.processor = FrigateEventProcessor(config, self.publish_message)
