@@ -51,7 +51,7 @@ class BaseVisionProcessor(ABC):
     @staticmethod
     def get_vision_engine(config: AIConfig) -> 'BaseVisionProcessor':
         """Returns a vision processor based on the engine."""
-        if config.engine == 'olama':
+        if config.engine == 'ollama':
             logger.info("Using Olama Vision processor.")
             from .ollama_vision_processor import OlamaVision
             return OlamaVision(config)

@@ -293,6 +293,10 @@ class FrigateEventProcessor:
     
     def generate_notification(self, event):
         """ Returns a JSON string representing the alert notification for this event """
+        if event is None:
+            logger.warning("generate_notification called with no event")
+            return None
+        
         logger.debug("Event %s: Generating notification for event", event.id)
 
         detection = self.generate_detection_string(event)

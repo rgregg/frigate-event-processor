@@ -26,7 +26,7 @@ class OlamaVision(BaseVisionProcessor):
         
         logger.info("Event %s: processing with AI model: %s", event.id, self.config.ai_model)
 
-        image_data = super()._prepare_prompt(detection, location)
+        image_data = super()._fetch_image_base64(snapshot_url)
         if image_data is None:
             return None
 
@@ -41,7 +41,6 @@ class OlamaVision(BaseVisionProcessor):
 
         try:
             response = httpx.post(self.config.service_url, json=request)
-            response = self.model.generate_content(request)
             logger.debug("API response: %s", response)
             return response.json().get('response')
         except Exception as exc:

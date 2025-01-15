@@ -127,7 +127,8 @@ class MqttEventReceiver(BaseHealthCheck):
                     elif command.lower().startswith("n "):
                         event = self.processor.get_ongoing_event(command[2:])
                         message = self.processor.generate_notification(event)
-                        logger.info("Response %s", message)
+                        output = json.dumps(message.to_dict(), indent=2)
+                        logger.info("Notification:\n%s", output)
                     elif command.lower().startswith("t "):
                         event = self.processor.get_ongoing_event(command[2:])
                         url = self.processor.get_snapshot_url(event)
