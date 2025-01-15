@@ -5,11 +5,12 @@ import base64
 import google.generativeai as genai
 import httpx
 
+from .vision_processor import BaseVisionProcessor
 from .app_configuration import AIConfig
 
 logger = logging.getLogger(__name__)
 
-class GoogleVision:
+class GoogleVision(BaseVisionProcessor):
     """Class to process images using Google Vision API."""
     def __init__(self, ai_config: AIConfig):
         self.config = ai_config

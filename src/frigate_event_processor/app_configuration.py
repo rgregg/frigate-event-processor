@@ -253,11 +253,13 @@ class AIConfig:
     """Configuration for the AI model"""
     def __init__(self):
         self.enabled = None
+        self.engine = None
         self.api_key = None
         self.ai_model = None
         self.snapshot_format = None
         self.prompt = None
         self.inject_detection = None
+        self.service_url = None
 
     def load_default(self):
         self.load_json({})
@@ -265,14 +267,16 @@ class AIConfig:
     def load_json(self, data):
         """Load the AI configuration from a JSON object"""
         self.enabled = data.get('enabled') or False
+        self.engine = data.get('engine') or "google"
         self.api_key = data.get('api_key') or None
         self.ai_model = data.get('ai_model') or "gemini-1.5-flash"
         self.snapshot_format = data.get('snapshot_format') or "image/jpeg"
         self.prompt = data.get('prompt') or None
         self.inject_detection = data.get('inject_detection') or True
+        self.service_url = data.get('service_url') or None
 
     def __repr__(self):
-        return f"AIConfig(enabled={self.enabled}, api_key={self.api_key}, ai_model={self.ai_model}, snapshot_format={self.snapshot_format}, prompt={self.prompt}, inject_detection={self.inject_detection})"
+        return f"AIConfig(enabled={self.enabled}, engine={self.engine}, api_key={self.api_key}, ai_model={self.ai_model}, snapshot_format={self.snapshot_format}, prompt={self.prompt}, inject_detection={self.inject_detection}, service_url={self.service_url})"
 
 class AppConfig(BaseAppConfig):
 

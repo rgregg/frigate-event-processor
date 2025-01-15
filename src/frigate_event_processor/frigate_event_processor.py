@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
 from prettytable import PrettyTable
 from .app_configuration import AppConfig, ZonesConfig
-from .google_vision_processor import GoogleVision
+from .vision_processor import BaseVisionProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ class FrigateEventProcessor:
         self.label_notification_history = dict()
         self.event_processing_queue = dict()
         self.alert_publish_func = alert_publish_func
-        self.ai_processor = GoogleVision(config.ai)
+        self.ai_processor = BaseVisionProcessor.get_vision_engine(config.ai)
 
     def process_event(self, event):
         """ Main loop for processing events """
@@ -299,11 +299,9 @@ class FrigateEventProcessor:
         location = self.generate_location_string(event)
         notification = Notification(event)
 
-        if self.ai_processor.enabled:
+        if getattr(self.ai_processor, 'enabled', False):
             logger.debug("Event %s: Processing with AI model", event.id)
             notification.message = self.ai_processor.process_event(detection, location, self.get_snapshot_url(event), event)
-        # elif self.ai_processor.enabled:
-        #     logger.debug("Event %s: Skipping AI model due to lack of clip", event.id)
         else:
             logger.debug("Event %s: AI Model is disabled", event.id)
 
