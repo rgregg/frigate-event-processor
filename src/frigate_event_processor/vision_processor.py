@@ -2,10 +2,11 @@
 
 import httpx
 import base64
+import logging
 from abc import ABC, abstractmethod
 from .app_configuration import AIConfig
 
-logger = logger.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 class BaseVisionProcessor(ABC):
     """Base class for AI vision processors."""
