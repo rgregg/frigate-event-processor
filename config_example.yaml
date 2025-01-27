@@ -85,6 +85,7 @@ logging:
   level: INFO     # DEBUG, INFO, WARNING, ERROR, CRITICAL
   path: "./logs/frigate-processor.log"
   max_keep: 10    # number of log files to keep
+  log_raw_events: true  # record the raw events from Frigate to a file
 
 ai:
   enabled: true   # enable AI processing with Google Gemini API
