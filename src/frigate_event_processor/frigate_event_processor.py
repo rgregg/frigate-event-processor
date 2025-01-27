@@ -19,6 +19,7 @@ class FrigateEventProcessor:
         self.cameras = {alert.camera: alert for alert in self.config.alerts}
         self.camera_notification_history = dict()
         self.label_notification_history = dict()
+        self.group_notification_history = dict()
         self.event_processing_queue = dict()
         self.alert_publish_func = alert_publish_func
         self.ai_processor = BaseVisionProcessor.get_vision_engine(config.ai)
@@ -33,6 +34,9 @@ class FrigateEventProcessor:
             self.process_event_data(after, event_type.upper())
         elif event_type == "end":
             self.process_end_event(before)
+
+        if self.config.logging.log_raw_events:
+            pass
 
     def clear_pending_notifications(self):
         """ Cancel any pending timers queued """
@@ -110,8 +114,8 @@ class FrigateEventProcessor:
         Publish an alert to the MQTT alerting topic
         """
         alert = self.generate_notification(event)
-        self.camera_notification_history[event.camera] = alert
-        self.label_notification_history[self.camera_and_label_key(event)] = alert
+
+        self.store_cooldown_for_event(event, alert)
 
         alert_payload = json.dumps(alert.to_dict())
         logger.info("ALERT: %s", alert_payload)
@@ -119,6 +123,15 @@ class FrigateEventProcessor:
 
         if self.config.event_tracking.enabled:
             self.publish_event_tracking(alert)
+
+    def store_cooldown_for_event(self, event, alert):
+        """ Store the alert in the notification history for cooldown purposes """
+        self.camera_notification_history[event.camera] = alert
+        self.label_notification_history[self.camera_and_label_key(event)] = alert
+        
+        camera_group = self.config.camera_groups.get_camera_group(event.camera)
+        if camera_group is not None:
+            self.group_notification_history[camera_group] = alert
 
     def publish_event_tracking(self, alert):
         """ Publish the event to the event tracking MQTT topic """
@@ -175,27 +188,7 @@ class FrigateEventProcessor:
         Compare events to see if we should create a new notification for this event
         """
         # check to see if this is a significant change from the previous event
-        is_significant = True
-        reason = ""
-        if before is not None:
-            if before.label != after.label:
-                reason = "label"
-            elif before.sub_label != after.sub_label:
-                reason = "sub_label"
-            elif before.current_zones != after.current_zones:
-                reason = "current_zones"
-            elif before.entered_zones != after.entered_zones:
-                reason = "entered_zones"
-            elif before.has_clip != after.has_clip and bool(after.has_clip):
-                reason = "has_clip"
-            elif before.has_snapshot != after.has_snapshot and bool(after.has_snapshot):
-                reason = "has_snapshot"
-            else:
-                reason = "end of statements"
-                is_significant = False
-        else:
-            reason = "new event - before was none"
-
+        is_significant, reason = self.is_event_significant(before, after)
         if not is_significant:
             logger.info("Event %s: not significant change.", before.id)
             return False
@@ -251,32 +244,70 @@ class FrigateEventProcessor:
             return False
                 
         return True
+
+    def is_event_significant(self, before, after):
+        is_significant = True
+        reason = ""
+        if before is not None:
+            if before.label != after.label:
+                reason = "label"
+            elif before.sub_label != after.sub_label:
+                reason = "sub_label"
+            elif before.current_zones != after.current_zones:
+                reason = "current_zones"
+            elif before.entered_zones != after.entered_zones:
+                reason = "entered_zones"
+            elif before.has_clip != after.has_clip and bool(after.has_clip):
+                reason = "has_clip"
+            elif before.has_snapshot != after.has_snapshot and bool(after.has_snapshot):
+                reason = "has_snapshot"
+            else:
+                reason = "end of statements"
+                is_significant = False
+        else:
+            reason = "new event - before was none"
+        return is_significant,reason
     
     
     def is_event_past_cooldown(self, event):
         """ Check to see if this event meets the required cooldown time in the configuration """
         cooldown = self.config.alert_rules.cooldown
 
-        # If both camera and label cooldowns are 0, always return True
-        if cooldown.camera_duration_seconds == 0 and cooldown.label_duration_seconds == 0:
+        # If all cooldowns are 0, always return True
+        if not any([cooldown.camera_duration_seconds, 
+                    cooldown.label_duration_seconds, 
+                    cooldown.group_duration_seconds]):
             return True
 
         # Helper function to check cooldown expiration
         def is_past_cooldown(previous_notification, duration_seconds):
             if previous_notification is None or duration_seconds == 0:
+                logger.debug("No previous notification or cooldown duration")
                 return True
             delta = timedelta(seconds=duration_seconds)
+            elapsed = datetime.now() - delta
+            logger.debug("Elapsed time on cooldown: %s", elapsed)
             return previous_notification.timestamp < (datetime.now() - delta)
 
         # Check camera cooldown
         camera_notification = self.camera_notification_history.get(event.camera)
         if not is_past_cooldown(camera_notification, cooldown.camera_duration_seconds):
+            logger.debug("Camera %s still in cooldown", event.camera)
             return False
 
         # Check label cooldown
         label_notification = self.label_notification_history.get(self.camera_and_label_key(event))
         if not is_past_cooldown(label_notification, cooldown.label_duration_seconds):
+            logger.debug("Camera %s Label %s still in cooldown", event.camera, event.label)
             return False
+        
+        # Check group cooldown
+        camera_group = self.config.camera_groups.get_camera_group(event.camera)
+        if camera_group is not None:
+            group_notification = self.camera_notification_history.get(camera_group)
+            if not is_past_cooldown(group_notification, cooldown.group_duration_seconds):
+                logger.debug("Camera Group %s still in cooldown", camera_group)
+                return False
 
         return True
     
