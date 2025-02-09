@@ -69,6 +69,18 @@ alert_rules:
     # Amount of time that must elapse before a notification is fired again for the same label on a camera
     label: 1m
 
+    # Camera groups cooldown - prevents notifications from cameras in the group until the timer expires.
+    group: 1m
+
+# Define camera groups where cameras overlap, reducing notifications with a group cooldown timer
+camera groups:
+  carport:
+    - carport
+    - carport_side
+  porch:
+    - porch
+    - front_steps
+
 logging:
   level: INFO     # DEBUG, INFO, WARNING, ERROR, CRITICAL
   path: "./logs/frigate-processor.log"

@@ -165,6 +165,7 @@ class CooldownConfig:
     def __init__(self):
         self.camera_duration_seconds = None
         self.label_duration_seconds = None
+        self.group_duration_seconds = None
 
     def load_default(self):
         self.load_json({})
@@ -173,9 +174,10 @@ class CooldownConfig:
         """Load the cooldown configuration from a JSON object"""
         self.camera_duration_seconds = data.get('camera') or 0
         self.label_duration_seconds = data.get('label') or 0
+        self.group_duration_seconds = data.get('group') or 0
 
     def __repr__(self):
-        return f"Cooldown(camera={self.camera_duration_seconds}, object={self.label_duration_seconds})"
+        return f"Cooldown(camera={self.camera_duration_seconds}, object={self.label_duration_seconds}, group={self.group_duration_seconds})"
 
 class AlertRulesConfig:
     """Configuration for alerting rules"""
@@ -249,6 +251,40 @@ class LoggingConfig:
         self.rotate = data.get('rotate') or False
         self.max_keep = data.get('max_keep') or 10
 
+class CameraGroupsConfig:
+    """Configuration for camera groups"""
+    def __init__(self):
+        self.groups = []
+
+    def __repr__(self):
+        return f"CameraGroups(groups={self.groups})"
+    
+    def load_json(self, data):
+        """Load the camera groups from a JSON object"""
+        self.groups.clear()
+        for name, cameras in data.items():
+            new_group = CameraGroupConfig()
+            new_group.name = name
+            new_group.cameras = cameras
+            self.groups.append(new_group)
+
+    def get_camera_group(self, camera_name: str):
+        """Get the camera group that contains the camera"""
+        for group in self.groups:
+            if camera_name in group.cameras:
+                return group
+        return None
+
+class CameraGroupConfig:
+    """Configuration for a group of cameras"""
+    def __init__(self, name: str, cameras: list[str]):
+        self.name = name
+        self.cameras = cameras
+
+    def __repr__(self):
+        return f"CameraGroup(name={self.name}, cameras={self.cameras})"
+
+
 class AIConfig:
     """Configuration for the AI model"""
     def __init__(self):
@@ -289,6 +325,7 @@ class AppConfig(BaseAppConfig):
         self.event_tracking = EventTrackingConfig()
         self.logging = LoggingConfig()
         self.ai = AIConfig()
+        self.camera_groups = CameraGroupsConfig()
 
     def apply_from_dict(self, data):
         """Load settings from a dictionary"""
@@ -299,6 +336,7 @@ class AppConfig(BaseAppConfig):
         self.__load_tracking_config(data)
         self.__load_logging_config(data)
         self.__load_ai_config(data)
+        self.__load_camera_groups(data)
 
     def __load_logging_config(self, data):
         """Load the logging settings"""
@@ -356,6 +394,12 @@ class AppConfig(BaseAppConfig):
             self.ai.load_json(ai)
         else:
             self.ai.load_default()
+
+    def __load_camera_groups(self, data):
+        """Load camera groups"""
+        groups = data.get('camera_groups')
+        if groups is not None:
+            self.camera_groups.load_json(groups)
 
     def __repr__(self):
         return (f"AppConfig(mqtt={self.mqtt}, frigate={self.frigate}, alerts={self.alerts}, ", 
