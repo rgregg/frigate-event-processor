@@ -49,11 +49,17 @@ def main():
     try:
         mqtt_receiver.connect_and_loop()
     except KeyboardInterrupt:
-        logger.info("Shutting down MQTT event receiver")
+        logger.info("SIGINT received - Shutting down MQTT event receiver")
         mqtt_receiver.disconnect()
-        if health_check is not None:
-            health_check.stop()
+    except Exception as exc:
+        logger.error("An unexpdected error occurred: %s", exc)
 
+    # Clean shutdown if we get to this point
+    if mqtt_receiver is not None:
+        mqtt_receiver.disconnect()
+    if health_check is not None:
+        health_check.stop()
+        
 
 
 def health_check_func() -> bool:
