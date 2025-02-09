@@ -240,7 +240,6 @@ class LoggingConfig:
         self.path = None
         self.rotate = None
         self.max_keep = None
-        self.log_raw_events = None
 
     def load_default(self):
         self.load_json({})
@@ -251,7 +250,6 @@ class LoggingConfig:
         self.path = data.get('path') or None
         self.rotate = data.get('rotate') or False
         self.max_keep = data.get('max_keep') or 10
-        self.log_raw_events = data.get('log_raw_events') or False
 
 class CameraGroupsConfig:
     """Configuration for camera groups"""

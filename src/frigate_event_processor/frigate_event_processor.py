@@ -35,9 +35,6 @@ class FrigateEventProcessor:
         elif event_type == "end":
             self.process_end_event(before)
 
-        if self.config.logging.log_raw_events:
-            pass
-
     def clear_pending_notifications(self):
         """ Cancel any pending timers queued """
         for _index, (_key, value) in enumerate(self.event_processing_queue.items()):
