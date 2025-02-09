@@ -284,6 +284,9 @@ class FrigateEventProcessor:
             if previous_notification is None or duration_seconds == 0:
                 logger.debug("No previous notification or cooldown duration")
                 return True
+            if not isinstance(duration_seconds, (int, float)):
+                logger.debug("Cooldown duration is not a number: %s", duration_seconds)
+                return True
             delta = timedelta(seconds=duration_seconds)
             elapsed = datetime.now() - delta
             logger.debug("Elapsed time on cooldown: %s", elapsed)
