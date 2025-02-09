@@ -279,15 +279,18 @@ class FrigateEventProcessor:
         # Helper function to check cooldown expiration
         def is_past_cooldown(previous_notification, duration_seconds):
             if previous_notification is None or duration_seconds == 0:
-                logger.debug("No previous notification or cooldown duration")
+                logger.info("No previous notification or cooldown duration")
                 return True
             if not isinstance(duration_seconds, (int, float)):
-                logger.debug("Cooldown duration is not a number: %s", duration_seconds)
+                logger.info("Cooldown duration is not a number: %s", duration_seconds)
                 return True
             delta = timedelta(seconds=duration_seconds)
             elapsed = datetime.now() - delta
-            logger.debug("Elapsed time on cooldown: %s", elapsed)
-            return previous_notification.timestamp < (datetime.now() - delta)
+            logger.info("Elapsed time on cooldown: %s", elapsed)
+
+            result = previous_notification.timestamp < (datetime.now() - delta)
+            logger.info("is_past_cooldown: %s", result)
+            return result
 
         # Check camera cooldown
         camera_notification = self.camera_notification_history.get(event.camera)
