@@ -39,6 +39,7 @@ def main():
     logger.debug("Configuration: %s", file_config.config)
 
     mqtt_receiver = MqttEventReceiver(file_config.config)
+    health_check = None
     
     # Start the health check if enabled
     if DockerHealthCheck.health_check_enabled():

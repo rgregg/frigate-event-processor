@@ -106,7 +106,7 @@ class FrigateEventProcessor:
         """
         logger.info("Event %s: Processing new alert", event.id)
         self.ongoing_events[event.id] = event
-        if self.evaluate_alert(previous, event):
+        if self.should_publish_event(previous, event):
             self.publish_event_to_mqtt(event)
     
     def publish_event_to_mqtt(self, event):
@@ -183,7 +183,7 @@ class FrigateEventProcessor:
         except KeyError:
             pass
 
-    def evaluate_alert(self, before, after):
+    def should_publish_event(self, before, after):
         """
         Compare events to see if we should create a new notification for this event
         """
@@ -206,7 +206,7 @@ class FrigateEventProcessor:
         alert_config = self.config_for_camera(after.camera)
         if alert_config is None:
             logger.info("Event %s: no configuration for camera %s", after.id, after.camera)
-            return True
+            return False
         
         # is the alert enabled or disabled
         if not alert_config.enabled:
@@ -238,8 +238,8 @@ class FrigateEventProcessor:
             logger.info("Event %s: no video clip", after.id)
             return False
         
-        # check to see if we're still in the event cooldown for the camera
-        if not before and not self.is_event_past_cooldown(after):
+        # check to see if we're still in the event cooldown for the camera (always do this last)
+        if not self.is_event_past_cooldown(after):
             logger.info("Event %s: was still in cooldown time", after.id)
             return False
                 
@@ -277,6 +277,7 @@ class FrigateEventProcessor:
         if not any([cooldown.camera_duration_seconds, 
                     cooldown.label_duration_seconds, 
                     cooldown.group_duration_seconds]):
+            logger.info("No cooldowns configured")
             return True
 
         # Helper function to check cooldown expiration
