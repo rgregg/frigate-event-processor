@@ -26,14 +26,17 @@ class FrigateEventProcessor:
 
     def process_event(self, event):
         """ Main loop for processing events """
-        event_type = event.get('type')
-        before = event.get('before')
-        after = event.get('after')
+        try:
+            event_type = event.get('type')
+            before = event.get('before')
+            after = event.get('after')
 
-        if event_type == "new" or event_type == "update":
-            self.process_event_data(after, event_type.upper())
-        elif event_type == "end":
-            self.process_end_event(before)
+            if event_type == "new" or event_type == "update":
+                self.process_event_data(after, event_type.upper())
+            elif event_type == "end":
+                self.process_end_event(before)
+        except Exception as exc:
+            logger.error("An unexpected error occurred: %s\nEvent: %s", exc, json.dumps(event, indent=2))
 
     def clear_pending_notifications(self):
         """ Cancel any pending timers queued """
