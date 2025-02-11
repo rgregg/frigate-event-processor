@@ -80,6 +80,13 @@ class FileBasedAppConfig:
     def __reload_function(self):
         """Reload the configuration from the file"""
         logger.info("Loading app configuration from %s", self.config_file_path)
+
+        if not self.config_file_path.exists():
+            logger.warning("Configuration file not found: %s", self.config_file_path)
+            logger.info("Using default configuration")
+            self.__config.apply_from_dict({})
+            return
+
         with open(self.config_file_path, 'r', encoding='utf-8') as file:
             data = yaml.safe_load(file)
             self.__config.apply_from_dict(data)

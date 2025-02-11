@@ -370,6 +370,8 @@ class AppConfig(BaseAppConfig):
         """Load alerts configuration"""
         alerts = data.get('alerts')
         self.alerts.clear()
+        if alerts is None:
+            return
         for alert in alerts:
             new_alert = AlertConfig()
             new_alert.load_json(alert)
