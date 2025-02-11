@@ -134,7 +134,7 @@ class MqttEventReceiver(BaseHealthCheck):
                         url = self.processor.get_snapshot_url(event)
                         logger.info("Snapshot URL: %s", url)
                     elif command.lower() == "c":
-                        logger.info("Configuration: %s", self.config)
+                        logger.info("Configuration: %s", self.config.__repr__())
                     else:
                         option_text = ("p: Print ongoing events\n",
                                        "q: Quit\n",
