@@ -174,9 +174,11 @@ class CooldownConfig:
 
     def load_json(self, data):
         """Load the cooldown configuration from a JSON object"""
-        self.camera_duration_seconds = data.get('camera') or 0
-        self.label_duration_seconds = data.get('label') or 0
-        self.group_duration_seconds = data.get('group') or 0
+        self.camera_duration_seconds = ParserUtilities.parse_duration(data.get('camera'))
+        self.label_duration_seconds = ParserUtilities.parse_duration(data.get('label'))
+        self.group_duration_seconds = ParserUtilities.parse_duration(data.get('group'))
+
+        logger.info(f"Cooldown(camera={self.camera_duration_seconds}, object={self.label_duration_seconds}, group={self.group_duration_seconds})")
 
     def __repr__(self):
         return f"Cooldown(camera={self.camera_duration_seconds}, object={self.label_duration_seconds}, group={self.group_duration_seconds})"
@@ -203,8 +205,10 @@ class AlertRulesConfig:
 
         cooldown = data.get('cooldown')
         if cooldown is not None:
+            logger.info("Loading cooldown configuration")
             self.cooldown.load_json(cooldown)
         else:
+            logger.info("Using default cooldown configuration")
             self.cooldown.load_default()
 
     def __repr__(self):
@@ -368,6 +372,8 @@ class AppConfig(BaseAppConfig):
         """Load alerts configuration"""
         alerts = data.get('alerts')
         self.alerts.clear()
+        if alerts is None:
+            return
         for alert in alerts:
             new_alert = AlertConfig()
             new_alert.load_json(alert)

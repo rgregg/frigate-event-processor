@@ -402,11 +402,14 @@ class FrigateEventProcessor:
 
         if self.config.logging.path is not None:
             max_keep = self.config.logging.max_keep or 10
-            handler = RotatingFileHandler(self.config.logging.path, maxBytes=5*1024*1024, backupCount=max_keep)
-            handler.setLevel(level)
-            formatter = logging.Formatter("%(asctime)-15s %(name)-8s %(levelname)s: %(message)s")
-            handler.setFormatter(formatter)
-            logging.getLogger().addHandler(handler)
+            try:
+                handler = RotatingFileHandler(self.config.logging.path, maxBytes=5*1024*1024, backupCount=max_keep)
+                handler.setLevel(level)
+                formatter = logging.Formatter("%(asctime)-15s %(name)-8s %(levelname)s: %(message)s")
+                handler.setFormatter(formatter)
+                logging.getLogger().addHandler(handler)
+            except FileNotFoundError:
+                logger.error("Failed to open log file: %s", self.config.logging.path)
 
     
     def print_ongoing_events(self):

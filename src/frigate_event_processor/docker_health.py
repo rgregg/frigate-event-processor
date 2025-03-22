@@ -35,6 +35,9 @@ class DockerHealthCheck:
         self.__add_routes()
 
     def run_flask(self):
+        # Set Flask logger to only show errors
+        log = logging.getLogger('werkzeug')
+        log.setLevel(logging.ERROR)
         app.run(host=self.host, port=self.port)
 
     def start(self):
