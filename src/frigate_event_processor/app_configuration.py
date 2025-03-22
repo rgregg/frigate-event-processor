@@ -45,6 +45,7 @@ class MqttConfig:
         self.listen_topic = None
         self.alert_topic = None
         self.load_default()
+        self.retain = False
 
     def load_default(self):
         self.load_json({})
@@ -57,6 +58,7 @@ class MqttConfig:
         self.alert_topic = data.get('alert_topic') or "alerts/camera_system"
         self.username = data.get('username')
         self.password = data.get('password')
+        self.retain = data.get('retain') or False
 
     def __repr__(self):
         return f"Mqtt(host={self.host}, username={self.username}, password={self.password}, listen_topic={self.listen_topic}, alert_topic={self.alert_topic})"

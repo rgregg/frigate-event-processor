@@ -80,7 +80,7 @@ class MqttEventReceiver(BaseHealthCheck):
     def publish_message(self, topic, value):
         """Publishes a message to the MQTT broker."""
         client = self.mqtt_client
-        client.publish(topic, value)
+        client.publish(topic, value, retain=self.config.mqtt.retain)
 
     def connect_and_loop(self):
         """Connects to the MQTT broker and starts the event loop."""

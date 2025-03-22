@@ -3,6 +3,7 @@ mqtt:
   port: 1883
   listen_topic: frigate/events        # Topic to listen for events on, published by Frigate
   alert_topic: alerts/camera_system   # Topic where qualified alerts are published for notifications
+  retain: true                        # Retain messages on the MQTT broker
 
 frigate:
   host: homeassistant.lan             # Address for the Frigate API, use the unauthenticated address
