@@ -30,6 +30,7 @@ class MqttEventReceiver(BaseHealthCheck):
         self.config = config
         self.processor = FrigateEventProcessor(config, self.publish_message)
         self.mqtt_client = None
+        self.mqtt_logger = logging.getLogger("frigate_event_processor.mqtt_messages")
 
     @property
     def is_connected(self):
@@ -49,6 +50,8 @@ class MqttEventReceiver(BaseHealthCheck):
         try:
             # Decode the message payload
             message = msg.payload.decode('utf-8')
+            if getattr(self.config.logging, "mqtt_debug", False):
+                self.mqtt_logger.info(message)
             
             # Parse the message as JSON
             data = json.loads(message)
@@ -75,7 +78,6 @@ class MqttEventReceiver(BaseHealthCheck):
         """Callback when the client disconnects from the server."""
         if rc != 0:
             logger.warning("MQTT session is disconnected: %s", rc)
-
 
     def publish_message(self, topic, value):
         """Publishes a message to the MQTT broker."""

@@ -1,8 +1,9 @@
-import logging
 import json
+import logging
 import threading
 from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from prettytable import PrettyTable
 from .app_configuration import AppConfig, ZonesConfig
 from .vision_processor import BaseVisionProcessor
@@ -400,16 +401,44 @@ class FrigateEventProcessor:
             format="%(asctime)-15s %(name)-8s %(levelname)s: %(message)s",
         )
 
+        formatter = logging.Formatter("%(asctime)-15s %(name)-8s %(levelname)s: %(message)s")
+
         if self.config.logging.path is not None:
             max_keep = self.config.logging.max_keep or 10
             try:
                 handler = RotatingFileHandler(self.config.logging.path, maxBytes=5*1024*1024, backupCount=max_keep)
                 handler.setLevel(level)
-                formatter = logging.Formatter("%(asctime)-15s %(name)-8s %(levelname)s: %(message)s")
                 handler.setFormatter(formatter)
                 logging.getLogger().addHandler(handler)
             except FileNotFoundError:
                 logger.error("Failed to open log file: %s", self.config.logging.path)
+        
+        if getattr(self.config.logging, "mqtt_debug", False):
+            if not self.config.logging.path:
+                logger.warning("MQTT debug logging enabled but logging.path is not set; skipping MQTT debug file logging.")
+            else:
+                max_keep = self.config.logging.max_keep or 10
+                base_path = Path(self.config.logging.path)
+                debug_path = base_path.parent / "mqtt_debug.log"
+                debug_path_abs = str(debug_path.resolve())
+                mqtt_logger = logging.getLogger("frigate_event_processor.mqtt_messages")
+                mqtt_logger.setLevel(logging.DEBUG)
+                existing_handler = next(
+                    (
+                        h for h in mqtt_logger.handlers
+                        if getattr(h, "baseFilename", None) and Path(getattr(h, "baseFilename")).resolve() == Path(debug_path_abs)
+                    ),
+                    None,
+                )
+                if existing_handler is None:
+                    try:
+                        handler = RotatingFileHandler(debug_path_abs, maxBytes=5*1024*1024, backupCount=max_keep)
+                        handler.setLevel(logging.DEBUG)
+                        handler.setFormatter(formatter)
+                        mqtt_logger.addHandler(handler)
+                    except FileNotFoundError:
+                        logger.error("Failed to open MQTT debug log file: %s", debug_path_abs)
+                mqtt_logger.propagate = False
 
     
     def print_ongoing_events(self):

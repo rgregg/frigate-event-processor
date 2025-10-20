@@ -246,6 +246,7 @@ class LoggingConfig:
         self.path = None
         self.rotate = None
         self.max_keep = None
+        self.mqtt_debug = False
 
     def load_default(self):
         self.load_json({})
@@ -256,6 +257,7 @@ class LoggingConfig:
         self.path = data.get('path') or None
         self.rotate = data.get('rotate') or False
         self.max_keep = data.get('max_keep') or 10
+        self.mqtt_debug = data.get('mqtt_debug') or False
 
 class CameraGroupsConfig:
     """Configuration for camera groups"""
@@ -413,4 +415,3 @@ class AppConfig(BaseAppConfig):
         return (f"AppConfig(mqtt={self.mqtt}, frigate={self.frigate}, alerts={self.alerts}, ", 
                 f"alert_rules={self.alert_rules}, event_tracking={self.event_tracking}, ", 
                 f"logging={self.logging}, ai={self.ai})")
-

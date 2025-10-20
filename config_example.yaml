@@ -86,6 +86,7 @@ logging:
   level: INFO     # DEBUG, INFO, WARNING, ERROR, CRITICAL
   path: "./logs/frigate-processor.log"
   max_keep: 10    # number of log files to keep
+  mqtt_debug: false  # Enable logging of all MQTT messages to logs/mqtt_debug.log
 
 ai:
   enabled: true   # enable AI processing with Google Gemini API
