@@ -1,0 +1,49 @@
+https://frigate.local.dibbleapps.com/review?id=1761935763.900285-uyv0f1
+
+https://frigate.local.dibbleapps.com/clips/review/thumb-carport-1761935763.900285-uyv0f1.webp
+
+Thumbnails (api/events/{detections_id}/snapshot.jpg)
+https://frigate.local.dibbleapps.com/api/events/1761935763.674752-1kjv5v/snapshot.jpg
+https://frigate.local.dibbleapps.com/api/events/1761935792.633291-7xbr3f/snapshot.jpg
+
+{
+    "type": "new",
+    "before": {
+        "id": "1761704792.122585-fgexsa",
+        "camera": "front_steps",
+        "start_time": 1761704792.122585,
+        "end_time": null,
+        "severity": "alert",
+        "thumb_path": "/media/frigate/clips/review/thumb-front_steps-1761704792.122585-fgexsa.webp",
+        "data": {
+            "detections": [
+                "1761704790.540482-tcnnyq"
+            ],
+            "objects": [
+                "car"
+            ],
+            "sub_labels": [],
+            "zones": [],
+            "audio": []
+        }
+    },
+    "after": {
+        "id": "1761704792.122585-fgexsa",
+        "camera": "front_steps",
+        "start_time": 1761704792.122585,
+        "end_time": null,
+        "severity": "alert",
+        "thumb_path": "/media/frigate/clips/review/thumb-front_steps-1761704792.122585-fgexsa.webp",
+        "data": {
+            "detections": [
+                "1761704790.540482-tcnnyq"
+            ],
+            "objects": [
+                "car"
+            ],
+            "sub_labels": [],
+            "zones": [],
+            "audio": []
+        }
+    }
+}

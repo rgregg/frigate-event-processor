@@ -23,7 +23,8 @@ receive repeated alerts for the same detection within a small period of time.
 mqtt:
   host: mqtt-server.lan
   port: 1883
-  listen_topic: frigate/events
+  events_topic: frigate/events
+  reviews_topic: frigate/reviews
   alert_topic: alerts/camera_system
 
 frigate:

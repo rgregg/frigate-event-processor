@@ -49,27 +49,41 @@ class MqttEventReceiver(BaseHealthCheck):
         """Callback when the client receives a message from the server."""
         try:
             # Decode the message payload
+            topic = msg.topic
             message = msg.payload.decode('utf-8')
-            if getattr(self.config.logging, "mqtt_debug", False):
-                self.mqtt_logger.info(message)
+            if self.config.mqtt.debug:
+                self.mqtt_logger.info("MQTT DEBUG TOPIC='%s':\n%s", topic, message)
             
             # Parse the message as JSON
             data = json.loads(message)
             
             # Extract the "after" node if it exists
-            self.processor.process_event(data)
+            if topic == self.config.mqtt.events_topic and not self.config.mqtt.use_reviews:
+                self.processor.process_event(data)
+            elif topic == self.config.mqtt.reviews_topic and self.config.mqtt.use_reviews:
+                self.processor.process_review(data)
+            else:
+                logger.info("Received MQTT event that was not processed from topic %s", topic)
         
         except json.JSONDecodeError:
             logger.warning("Failed to decode message as JSON from topic %s: %s", msg.topic, message)
 
+    def subscribe_topic(self, client, topic):
+        if not topic is None:
+            logger.debug("Subscribing to topic %s", topic)
+            client.subscribe(topic)
+
     def on_connect(self, client, _userdata, _flags, rc, _properties):
         """Callback when the client connects to the server."""
-        logger.info("MQTT session is connected: %s", rc)
+        logger.debug("MQTT session is connected: %s", rc)
 
         # Subscribe to the topic for events
-        topic = self.config.mqtt.listen_topic
-        logger.info("Subscribing to topic %s", topic)
-        client.subscribe(topic)
+        if (self.config.mqtt.use_reviews):
+            logger.info("Subscribing to reviews_topic: %s", self.config.mqtt.reviews_topic)
+            self.subscribe_topic(client, self.config.mqtt.reviews_topic)
+        else:
+            logger.info("Subscribing to events_topic: %s", self.config.mqtt.events_topic)
+            self.subscribe_topic(client, self.config.mqtt.events_topic)
 
         # Publish "online" message when successfully connected
         client.publish(self.config.mqtt.alert_topic + "/status", "online", retain=True)

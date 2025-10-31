@@ -56,7 +56,7 @@ class ParserUtilities:
 
 class BaseAppConfig(ABC):
     @abstractmethod
-    def apply_from_dict(self, data):
+    def load_json(self, data):
         """Load settings from a dictionary"""
         pass
 
@@ -67,35 +67,45 @@ class FileBasedAppConfig:
 
         self.__config = config_object
         self.config_file_path = Path(config_file).resolve()
-        self.__reload_function()
+        self.__reload_from_file(True)
         if watch_for_changes:
             self.__enable_watchdog()
-
-        
 
     @property
     def config(self):
         return self.__config
 
-    def __reload_function(self):
+    def __reload_from_file(self, first_time:bool):
         """Reload the configuration from the file"""
         logger.info("Loading app configuration from %s", self.config_file_path)
 
         if not self.config_file_path.exists():
             logger.warning("Configuration file not found: %s", self.config_file_path)
             logger.info("Using default configuration")
-            self.__config.apply_from_dict({})
+            self.__config.load_json({})
             return
 
         with open(self.config_file_path, 'r', encoding='utf-8') as file:
             data = yaml.safe_load(file)
-            self.__config.apply_from_dict(data)
+            self.__config.load_json(data)
+        
+        try:
+            self.__config.validate()
+        except ValueError as ve:
+            logger.warning(f"Configuration error: {ve}")
+            if (first_time):
+                # Abort the app if this happens on the first time
+                raise
+    
+    def __reload_on_change(self):
+        logger.info("Detected configuration file change -- reloading configuration data. Restarting the app is recommended.")
+        self.__reload_from_file(False)
 
     def __enable_watchdog(self):
         """Enable the watchdog to watch for changes to the configuration file"""
         # Set up the event handler and observer
         file_to_watch = self.config_file_path
-        event_handler = FileChangeHandler(str(file_to_watch), self.__reload_function)
+        event_handler = FileChangeHandler(str(file_to_watch), self.__reload_on_change)
         observer = Observer()
         observer.schedule(event_handler, path=str(file_to_watch.parent), recursive=False)
 

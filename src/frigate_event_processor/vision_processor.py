@@ -4,14 +4,16 @@ import httpx
 import base64
 import logging
 from abc import ABC, abstractmethod
-from .app_configuration import AIConfig
+from .app_configuration import AIConfig, AppConfig
+from .event_data import BaseEventData
 
 logger = logging.getLogger(__name__)
 
 class BaseVisionProcessor(ABC):
     """Base class for AI vision processors."""
-    def __init__(self, ai_config):
-        self.config = ai_config
+    def __init__(self, app_config:AppConfig):
+        self.app_config = app_config
+        self.config = app_config.ai
 
     @property
     def enabled(self):
@@ -19,7 +21,7 @@ class BaseVisionProcessor(ABC):
         return self.config.enabled
 
     @abstractmethod
-    def process_event(self, detection, location, snapshot_url, event):
+    def process_event(self, detection:str, location:str, event:BaseEventData):
         """Processes an event using the AI model."""
         raise NotImplementedError("Subclasses must implement this method")
     
@@ -39,7 +41,7 @@ class BaseVisionProcessor(ABC):
         image_data = image_response.content
         return base64.b64encode(image_data).decode('utf-8')
 
-    def _prepare_prompt(self, detection, location):
+    def _prepare_prompt(self, detection, location) -> str:
         """Prepares the prompt for the AI model."""
         prompt = self.config.prompt or """Describe this image"""
 
@@ -48,17 +50,27 @@ class BaseVisionProcessor(ABC):
 
         return prompt
     
+    def _get_snapshots_base64(self, event:BaseEventData) -> list:
+        snapshot_urls = event.get_snapshot_urls(self.app_config.frigate.api_base_url)
+        image_data_base64 = []
+        for url in snapshot_urls:
+            image_data = super()._fetch_image_base64(url)
+            if image_data is not None:
+                image_data_base64.append(image_data)
+        return image_data_base64
+    
     @staticmethod
-    def get_vision_engine(config: AIConfig) -> 'BaseVisionProcessor':
+    def get_vision_engine(app_config: AppConfig) -> 'BaseVisionProcessor':
         """Returns a vision processor based on the engine."""
-        if config.engine == 'ollama':
+        engine = app_config.ai.enabled
+        if engine == 'ollama':
             logger.info("Using Olama Vision processor.")
             from .ollama_vision_processor import OlamaVision
-            return OlamaVision(config)
-        elif config.engine == 'google':
+            return OlamaVision(app_config)
+        elif engine == 'google':
             logger.info("Using Google Gemini Vision processor.")
             from .google_vision_processor import GoogleVision
-            return GoogleVision(config)
+            return GoogleVision(app_config)
         else:
-            logger.warning(f"Unsupported vision engine: {config.engine}")
+            logger.warning(f"Unsupported vision engine: {engine}")
             return None

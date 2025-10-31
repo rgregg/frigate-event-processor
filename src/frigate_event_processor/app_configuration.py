@@ -29,23 +29,40 @@ Functions:
     FileBasedAppConfig.enable_watchdog(): Enable the watchdog to watch for changes to the configuration file.
 """
 import logging
+from abc import ABC, abstractmethod
+from typing import Tuple
 from pathlib import Path
 from .app_config_utils import BaseAppConfig, ParserUtilities
 
 # Define the classes to map the structure
 logger = logging.getLogger(__name__)
 
-class MqttConfig:
+class BaseConfig(ABC):
+    @abstractmethod
+    def load_json(self, data):
+        pass
+
+    def load_default(self):
+        self.load_json({})
+
+    @abstractmethod
+    def validate(self):
+        pass
+
+class MqttConfig(BaseConfig):
     """Configuration for the MQTT broker"""
     def __init__(self):
         self.host = None
         self.port = None
         self.username = None
         self.password = None
-        self.listen_topic = None
+        self.events_topic = None
+        self.reviews_topic = None
         self.alert_topic = None
+        self.use_reviews = None
         self.load_default()
         self.retain = False
+        self.debug = False
 
     def load_default(self):
         self.load_json({})
@@ -54,16 +71,34 @@ class MqttConfig:
         """Load saved configuration for the MQTT"""
         self.host = data.get('host') or "localhost"
         self.port = data.get('port') or 1883
-        self.listen_topic = data.get('listen_topic') or "#"
+        self.events_topic = data.get('events_topic') or data.get('listen_topic') or "frigate/events"
+        self.reviews_topic = data.get('reviews_topic') or "frigate/reviews"
+        self.use_reviews = data.get('use_reviews') or False
         self.alert_topic = data.get('alert_topic') or "alerts/camera_system"
         self.username = data.get('username')
         self.password = data.get('password')
         self.retain = data.get('retain') or False
+        self.debug = data.get('debug') or False
+    
+    def validate(self):
+        if self.use_reviews and not self.reviews_topic:
+            raise ValueError("reviews_topic is required when use_reviews=True")
+        if not self.use_reviews and not self.events_topic:
+            raise ValueError("events_topic is required when use_reviews=False")
+        if not self.alert_topic:
+            raise ValueError("alert_topic is required.")
+        if not self.host:
+            raise ValueError("host is required.")
+        if not self.port:
+            raise ValueError("port is required")
+        if self.password and not self.username:
+            raise ValueError("username is required if password is set")
 
     def __repr__(self):
-        return f"Mqtt(host={self.host}, username={self.username}, password={self.password}, listen_topic={self.listen_topic}, alert_topic={self.alert_topic})"
+        return f"Mqtt(host={self.host}, username={self.username}, password={self.password}, use_reviews={self.use_reviews}, events_topic={self.events_topic}, reviews_topic={self.reviews_topic}, alert_topic={self.alert_topic})"
 
-class FrigateConfig:
+
+class FrigateConfig(BaseConfig):
     """Configuration for the Frigate API"""
     def __init__(self):
         self.host = None
@@ -80,6 +115,12 @@ class FrigateConfig:
         self.port = data.get('port') or 5000
         self.use_ssl = data.get('ssl') or False
 
+    def validate(self):
+        if not self.host:
+            raise ValueError("frigate host is required.")
+        if not self.port:
+            raise ValueError("frigate port is required")
+
     @property
     def api_base_url(self):
         """Get the base URL for the Frigate API"""
@@ -89,7 +130,7 @@ class FrigateConfig:
     def __repr__(self):
         return f"Frigate(url={self.api_base_url})"
 
-class AlertConfig:
+class AlertConfig(BaseConfig):
     """Configuration for alerts"""
     def __init__(self):
         self.camera = None
@@ -111,6 +152,9 @@ class AlertConfig:
         if zones is not None:
             self.zones.ignore_zones = ZonesConfig.parse_zones(zones.get('ignore'))
             self.zones.require_zones = ZonesConfig.parse_zones(zones.get('require'))
+
+    def validate(self):
+        pass
 
     def __repr__(self):
         return f"Alert(camera={self.camera}, objects={self.labels}, enabled={self.enabled}, zones={self.zones})"
@@ -162,7 +206,7 @@ class ZonesConfig:
 
         return config
 
-class CooldownConfig:
+class CooldownConfig(BaseConfig):
     """Configuration for cooldowns"""
     def __init__(self):
         self.camera_duration_seconds = None
@@ -180,10 +224,13 @@ class CooldownConfig:
 
         logger.info(f"Cooldown(camera={self.camera_duration_seconds}, object={self.label_duration_seconds}, group={self.group_duration_seconds})")
 
+    def validate(self):
+        pass
+
     def __repr__(self):
         return f"Cooldown(camera={self.camera_duration_seconds}, object={self.label_duration_seconds}, group={self.group_duration_seconds})"
 
-class AlertRulesConfig:
+class AlertRulesConfig(BaseConfig):
     """Configuration for alerting rules"""
     def __init__(self):
         self.minimum_duration_seconds = None
@@ -211,10 +258,13 @@ class AlertRulesConfig:
             logger.info("Using default cooldown configuration")
             self.cooldown.load_default()
 
+    def validate(self):
+        pass
+
     def __repr__(self):
         return f"AlertRules(min_dur={self.minimum_duration_seconds}s, snapshots={self.require_snapshot}, video={self.require_video}, cooldown={self.cooldown})"
 
-class EventTrackingConfig:
+class EventTrackingConfig(BaseConfig):
     """Configuration for event tracking"""
     def __init__(self):
         self.enabled = None
@@ -234,19 +284,27 @@ class EventTrackingConfig:
         self.discovery_base_topic = data.get('discovery_base_topic') or "homeassistant"
         self.home_assistant_url = data.get('home_assistant_url')
 
+    def validate(self):
+        if self.enabled and not self.mqtt_topic:
+            raise ValueError("mqtt_topic is required if enabled.")
+        if self.home_assistant and not self.discovery_base_topic:
+            raise ValueError("discover_base_topic is required if home_assistant is True")
+        if self.home_assistant and not self.home_assistant_url:
+            raise ValueError("home_assistant_url is required if home_assistant is True")
+
     def __repr__(self):
         return (f"EventTracking(enabled={self.enabled}, mqtt_topic={self.mqtt_topic}, "
             f"home_assistant={self.home_assistant}, discovery_base_topic={self.discovery_base_topic}, "
             f"home_assistant_url={self.home_assistant_url})")
 
-class LoggingConfig:
+class LoggingConfig(BaseConfig):
     """Configuration for the logger"""
     def __init__(self):
         self.level = None
         self.path = None
         self.rotate = None
         self.max_keep = None
-        self.mqtt_debug = False
+        self.debug = False
 
     def load_default(self):
         self.load_json({})
@@ -257,9 +315,12 @@ class LoggingConfig:
         self.path = data.get('path') or None
         self.rotate = data.get('rotate') or False
         self.max_keep = data.get('max_keep') or 10
-        self.mqtt_debug = data.get('mqtt_debug') or False
+        self.debug = data.get('debug') or False
 
-class CameraGroupsConfig:
+    def validate(self):
+        pass
+
+class CameraGroupsConfig(BaseConfig):
     """Configuration for camera groups"""
     def __init__(self):
         self.groups = []
@@ -275,6 +336,9 @@ class CameraGroupsConfig:
             new_group.name = name
             new_group.cameras = cameras
             self.groups.append(new_group)
+    
+    def validate(self):
+        pass
 
     def get_camera_group(self, camera_name: str):
         """Get the camera group that contains the camera"""
@@ -293,7 +357,7 @@ class CameraGroupConfig:
         return f"CameraGroup(name={self.name}, cameras={self.cameras})"
 
 
-class AIConfig:
+class AIConfig(BaseConfig):
     """Configuration for the AI model"""
     def __init__(self):
         self.enabled = None
@@ -319,10 +383,22 @@ class AIConfig:
         self.inject_detection = data.get('inject_detection') or True
         self.service_url = data.get('service_url') or None
 
+    def validate(self):
+        if not self.enabled:
+            return
+        if not self.engine:
+            raise ValueError("engine is required if enabled is True")
+        if self.engine == "google" and not self.api_key:
+            raise ValueError("api_key is required when engine=google")
+        if not self.ai_model:
+            raise ValueError("ai_model is required if enabled is True")
+        if not self.prompt:
+            raise ValueError("prompt is required if enabled is True")
+
     def __repr__(self):
         return f"AIConfig(enabled={self.enabled}, engine={self.engine}, api_key={self.api_key}, ai_model={self.ai_model}, snapshot_format={self.snapshot_format}, prompt={self.prompt}, inject_detection={self.inject_detection}, service_url={self.service_url})"
 
-class AppConfig(BaseAppConfig):
+class AppConfig(BaseAppConfig, BaseConfig):
 
     """Configuration for the application"""
     def __init__(self):
@@ -335,7 +411,7 @@ class AppConfig(BaseAppConfig):
         self.ai = AIConfig()
         self.camera_groups = CameraGroupsConfig()
 
-    def apply_from_dict(self, data):
+    def load_json(self, data):
         """Load settings from a dictionary"""
         self.__load_mqtt_config(data)
         self.__load_frigate_config(data)
@@ -345,6 +421,16 @@ class AppConfig(BaseAppConfig):
         self.__load_logging_config(data)
         self.__load_ai_config(data)
         self.__load_camera_groups(data)
+
+    def validate(self):
+        self.mqtt.validate()
+        self.frigate.validate()
+        # self.alerts 
+        self.alert_rules.validate()
+        self.event_tracking.validate()
+        self.logging.validate()
+        self.ai.validate()
+        self.camera_groups.validate()
 
     def __load_logging_config(self, data):
         """Load the logging settings"""

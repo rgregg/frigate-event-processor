@@ -4,21 +4,21 @@ import base64
 import httpx
 
 from .vision_processor import BaseVisionProcessor
-from .app_configuration import AIConfig
+from .app_configuration import AIConfig, AppConfig
 
 logger = logging.getLogger(__name__)
 
 class OlamaVision(BaseVisionProcessor):
     """Class to process images using the local Olama model."""
-    def __init__(self, ai_config: AIConfig):
-        self.config = ai_config
+    def __init__(self, app_config: AppConfig):
+        super().__init__(app_config)
 
     @property
     def enabled(self):
         """Returns True if the AI processor is enabled."""
         return self.config.enabled
 
-    def process_event(self, detection, location, snapshot_url, event):
+    def process_event(self, detection, location, event):
         """Processes an event using the AI model."""
         if not self.config.enabled:
             logger.warning("AI processor is not enabled but was invoked.")
@@ -26,17 +26,13 @@ class OlamaVision(BaseVisionProcessor):
         
         logger.info("Event %s: processing with AI model: %s", event.id, self.config.ai_model)
 
-        image_data = super()._fetch_image_base64(snapshot_url)
-        if image_data is None:
-            return None
-
         prompt = super()._prepare_prompt(detection, location)
-        
+        image_data_base64 = super()._get_snapshots_base64(event)
         request = {
             "model": self.config.ai_model,
             "prompt": prompt,
             "stream": False,
-            "images": [image_data]
+            "images": image_data_base64
         }
 
         try:

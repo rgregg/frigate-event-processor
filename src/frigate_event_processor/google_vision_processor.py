@@ -5,17 +5,19 @@ import base64
 import google.generativeai as genai
 import httpx
 
+from .event_data import BaseEventData
 from .vision_processor import BaseVisionProcessor
-from .app_configuration import AIConfig
+from .app_configuration import AIConfig, AppConfig
 
 logger = logging.getLogger(__name__)
 
 class GoogleVision(BaseVisionProcessor):
     """Class to process images using Google Vision API."""
-    def __init__(self, ai_config: AIConfig):
-        self.config = ai_config
+    def __init__(self, app_config: AppConfig):
+        super().__init__(app_config)
+        ai_config = app_config.ai
         if ai_config.enabled:
-            logger.debug("Initializing Google AI with API_KEY: %s", ai_config.api_key)
+            logger.debug("Initializing Google AI")
             genai.configure(api_key=ai_config.api_key)
             ai_model = ai_config.ai_model
             logger.debug("Specified model: %s", ai_model)
@@ -27,31 +29,20 @@ class GoogleVision(BaseVisionProcessor):
         """Returns True if the AI processor is enabled."""
         return self.config.enabled
 
-    def process_event(self, detection, location, snapshot_url, event):
+    def process_event(self, detection, location, event):
         """Processes an event using the AI model."""
         if not self.config.enabled:
             logger.warning("AI processor is not enabled but was invoked.")
             return None
         
         logger.info("Event %s: processing with AI model: %s", event.id, self.config.ai_model)
-        
-        logger.debug("Event %s: fetching image from URL: %s", event.id, snapshot_url)
-        try:
-            image_response = httpx.get(snapshot_url)
-            if image_response.status_code != 200:
-                logger.info("Event %s: failed to fetch image from URL: %s", event.id, snapshot_url)
-                return None
-        except httpx.RequestError as exc:
-            logger.error("Event %s: failed to fetch image from URL: %s: %s", event.id, snapshot_url, exc)
-            return None
-        
-        image_data = image_response.content
-        prompt = self.config.prompt or """Describe this image"""
 
-        if self.config.inject_detection:
-            prompt += f" Camera name was '{location}'. This image was labeled with '{detection}'."
-        
-        request = [{'mime_type': self.config.snapshot_format, 'data': base64.b64encode(image_data).decode('utf-8')}, prompt]
+        request = [super()._prepare_prompt(detection, location)]
+        image_data_base64 = super()._get_snapshots_base64(event)
+        for image_data in image_data_base64:
+            if len(image_data_base64) > 0:
+                request.insert(0, {'mime_type': self.config.snapshot_format, 'data': image_data})
+
         logger.debug("API request parameters: %s", request)
         try:
             response = self.model.generate_content(request)

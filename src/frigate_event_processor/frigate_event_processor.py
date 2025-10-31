@@ -7,8 +7,14 @@ from pathlib import Path
 from prettytable import PrettyTable
 from .app_configuration import AppConfig, ZonesConfig
 from .vision_processor import BaseVisionProcessor
+from .event_data import *
+from typing import Iterable, TypeVar, Optional
 
 logger = logging.getLogger(__name__)
+T = TypeVar("T")
+
+def first_or_none(items: Iterable[T]) -> Optional[T]:
+    return next(iter(items), None)
 
 class FrigateEventProcessor:
     """Main class for processing events from Frigate via MQTT"""
@@ -23,21 +29,38 @@ class FrigateEventProcessor:
         self.group_notification_history = dict()
         self.event_processing_queue = dict()
         self.alert_publish_func = alert_publish_func
-        self.ai_processor = BaseVisionProcessor.get_vision_engine(config.ai)
+        self.ai_processor = BaseVisionProcessor.get_vision_engine(config)
 
     def process_event(self, event):
-        """ Main loop for processing events """
+        """ Main loop for processing events (not detections or alerts) """
         try:
             event_type = event.get('type')
-            before = event.get('before')
-            after = event.get('after')
-
-            if event_type == "new" or event_type == "update":
-                self.process_event_data(after, event_type.upper())
-            elif event_type == "end":
-                self.process_end_event(before)
+            before = DetectEventData(event.get('before'))
+            after = DetectEventData(event.get('after'))
+            self.handle_event_data(event_type, before, after)
         except Exception as exc:
             logger.error("An unexpected error occurred: %s\nEvent: %s", exc, json.dumps(event, indent=2))
+            raise
+
+    # handles processing reviews from frigate - a more advanced concept than events
+    def process_review(self, review):
+        """ Main loop for processing detections and alerts (not events)"""
+        try:
+            review_type = review.get('type')
+            before = ReviewEventData(review.get('before'))
+            after = ReviewEventData(review.get('after'))
+            self.handle_event_data(review_type, before, after)
+        except Exception as ex:
+            logger.error("An unexpected error occured: %s\nReview: %s", ex, json.dumps(review, indent=2))
+            raise
+
+    def handle_event_data(self, type, before, after):
+        if type == "new" or type == "update":
+            self.process_event_update(after, type.upper())
+        elif type == "end":
+            self.process_event_end(before)
+        else:
+            logger.warning("Unexpected event type: %s", type)
 
     def clear_pending_notifications(self):
         """ Cancel any pending timers queued """
@@ -45,10 +68,17 @@ class FrigateEventProcessor:
             value.cancel()
         self.event_processing_queue.clear()
         
-    def process_event_data(self, data, tag):
-        """ Indicates a new event has started """
-        event = EventData(data)
-        logger.info("%s: %s, camera=%s, label=%s, score=%s", tag, event.id, event.camera, event.label, event.score)
+    def process_event_update(self, event: BaseEventData, tag):
+        """ Indicates a new event, detection, or alert has started """
+
+        logger.info("%s: %s, camera=%s, start_time=%s", tag, event.id, event.camera, event.start_time)
+        if isinstance(event, DetectEventData):
+            logger.info("Processing event data...")
+        elif isinstance(event, ReviewEventData):
+            logger.info("Processing detection data...")
+        else:
+            logger.warning("Unexpected event data format: %s. Skipped.", type(event))
+            return
 
         # if we need to delay processing this event, queue the event
         if self.should_queue_event(event):
@@ -60,7 +90,7 @@ class FrigateEventProcessor:
     def should_queue_event(self, event):
         """ Check to see if an event needs to be queued bsased on the start_time of the event """
         # Check to see if there is a minimum event duration before we process events
-        if self.config.alert_rules.minimum_duration_seconds > 0:            
+        if not event.no_delay and self.config.alert_rules.minimum_duration_seconds > 0:            
             event_start_time =  datetime.fromtimestamp(event.start_time)
             elapsed_time = datetime.now() - event_start_time
             if elapsed_time.total_seconds() < self.config.alert_rules.minimum_duration_seconds:
@@ -71,7 +101,7 @@ class FrigateEventProcessor:
             return True
         return False
 
-    def queue_event_processing(self, event):
+    def queue_event_processing(self, event:BaseEventData):
         """ Handles queuing an event for the required duration of time and/or adding an event to an existing queue """
 
         elapsed_time = datetime.now() - datetime.fromtimestamp(event.start_time)
@@ -94,30 +124,29 @@ class FrigateEventProcessor:
         Loops over the events stored into the event's queue and processes them in order to make sure
         we perform all the necessary notifications
         """
-
         del self.event_processing_queue[event_queue.id]
         previous = None
         for event in event_queue.queue:
             self.process_event_for_alert(event, previous)
             previous = event
 
-    def process_event_for_alert(self, event, previous):
+    def process_event_for_alert(self, event:BaseEventData, previous:BaseEventData):
         """
         Evalautes an event to determine if it should be elevated to an alert
         """
-        logger.info("Event %s: Processing new alert", event.id)
+        logger.info("Event %s: Processing alert", event.id)
         self.ongoing_events[event.id] = event
         if self.should_publish_event(previous, event):
             self.publish_event_to_mqtt(event)
+        else:
+            logging.debug("Skipping publishing event %s", event.id)
     
-    def publish_event_to_mqtt(self, event):
+    def publish_event_to_mqtt(self, event:BaseEventData):
         """
         Publish an alert to the MQTT alerting topic
         """
         alert = self.generate_notification(event)
-
         self.store_cooldown_for_event(event, alert)
-
         alert_payload = json.dumps(alert.to_dict())
         logger.info("ALERT: %s", alert_payload)
         self.alert_publish_func(self.config.mqtt.alert_topic + "/alert", alert_payload)
@@ -167,7 +196,7 @@ class FrigateEventProcessor:
             return
         logger.info("Event %s: %s", event_id, event)
     
-    def process_end_event(self, data):
+    def process_event_end(self, data):
         """ Indicates that the event has ended and the object
             is no longer detected in the video """
         event_id = data.get('id')
@@ -198,9 +227,11 @@ class FrigateEventProcessor:
         
         # check for max_duration
         if self.config.alert_rules.maximum_duration_seconds > 0:
+            start_time = datetime.fromtimestamp(after.start_time)
+            duration = datetime.now() - start_time
             event_too_old = datetime.fromtimestamp(after.start_time) + timedelta(seconds=self.config.alert_rules.maximum_duration_seconds) < datetime.now()
             if event_too_old:
-                logger.info("Event %s: too long duration for alert.", after.id)
+                logger.info("Event %s: too old for alert (started %s, duration %s).", after.id, start_time, duration.total_seconds())
                 return False
 
         # check to see if this event meets the configuration criteria for this camera
@@ -319,69 +350,52 @@ class FrigateEventProcessor:
 
         return True
     
-    def generate_location_string(self, event):
+    def generate_location_string(self, event:BaseEventData):
         """ Generate the location string for this event based on the camera name and current zones """
-
         camera = event.camera.replace("_", " ").title()
-        if event.current_zones is not None and len(event.current_zones) > 0:
+        current_zones = event.get_zones()
+        if current_zones is not None and len(current_zones) > 0:
             zones = ", ".join(event.current_zones).replace("_", " ").title()
             return f"{camera} [{zones}]"
         else:
             return camera
-
     
-    def generate_notification(self, event):
+    def generate_notification(self, event:BaseEventData):
         """ Returns a JSON string representing the alert notification for this event """
         if event is None:
             logger.warning("generate_notification called with no event")
             return None
         
         logger.debug("Event %s: Generating notification for event", event.id)
-
         detection = self.generate_detection_string(event)
         location = self.generate_location_string(event)
-        notification = Notification(event)
+        notification = Notification.create(event)
 
         if getattr(self.ai_processor, 'enabled', False):
             logger.debug("Event %s: Processing with AI model", event.id)
-            notification.message = self.ai_processor.process_event(detection, location, self.get_snapshot_url(event), event)
+            notification.message = self.ai_processor.process_event(detection, location, event)
         else:
             logger.debug("Event %s: AI Model is disabled", event.id)
 
         if notification.message is None:
             logger.debug("Event %s: Generating default message", event.id)
             notification.message = f"{detection} was detected at {location}"
-        
-        notification.image = self.get_thumbnail_url(event)
-        notification.video = self.get_video_url(event)
 
+        notification.image = first_or_none(event.get_thumbnail_urls(self.config.frigate.api_base_url))
+        notification.video = first_or_none(event.get_video_urls(self.config.frigate.api_base_url))
         return notification
-    
-    def get_snapshot_url(self, event):
-        """ Get the snapshot URL for this event """
-        return self.config.frigate.api_base_url + f"/events/{event.id}/snapshot.jpg"
-    
-    def get_thumbnail_url(self, event):
-        """ Get the thumbnail URL for this event """
-        return self.config.frigate.api_base_url + f"/events/{event.id}/thumbnail.jpg"
-    
-    def get_video_url(self, event):
-        """ Get the video URL for this event """
-        if event.has_clip:
-            return self.config.frigate.api_base_url + f"/events/{event.id}/clip.mp4"
-        return None
     
     def camera_and_label_key(self, event):
         """ Generate a unique key for this event based on the camera and label """
         return f"{event.camera}__{event.label}"
 
-    def generate_detection_string(self, event):
+    def generate_detection_string(self, event:BaseEventData):
         """ Generate the detection string for this event """
-        output = event.label.replace("_", " ").title()  # "Person"
-        if event.sub_label is not None:
-            sub_labels = ', '.join([item['subLabel'].title() for item in event.sub_label])
-            output = f"{output} ({sub_labels})"
-        return output
+        labels = ", ".join(event.get_labels()).replace("_", " ").title()
+        sub_labels = event.get_sub_labels()
+        if sub_labels is not None and len(sub_labels) > 0:
+            labels = labels + " (" + ",".join(sub_labels) + ")"
+        return labels
 
     def config_for_camera(self, camera):
         """ Get the configuration for the camera """
@@ -390,10 +404,17 @@ class FrigateEventProcessor:
     def configure_logging(self):
         """ Configure logging for the class """
         level = logging.INFO
-        if self.config.logging.level.upper() == "DEBUG":
-            level = logging.DEBUG
-        if self.config.logging.level.upper() == "WARNING":
-            level = logging.WARNING
+        log_level = self.config.logging.level
+        if log_level is str:
+            log_level = log_level.upper()
+            if log_level == "DEBUG":
+                level = logging.DEBUG
+            elif log_level == "INFO":
+                level = logging.INFO
+            elif log_level == "WARNING":
+                level = logging.WARNING
+            elif log_level == "ERROR":
+                level = logging.ERROR
         
         # enable logging
         logging.basicConfig(
@@ -452,12 +473,8 @@ class FrigateEventProcessor:
         logger.info("\n%s", str(table))
                           
 
-        
-            
-
-
 class EventProcessingQueue:
-    def __init__(self, event):
+    def __init__(self, event:BaseEventData):
         self.id = event.id
         self.queue = [event]
         self.timer = None
@@ -465,78 +482,42 @@ class EventProcessingQueue:
     def add_to_queue(self, event):
         self.queue.append(event)
 
-class EventData:
-    def __init__(self, data):
-        self.id = data.get('id')
-        self.camera = data.get('camera')
-        self.frame_time = data.get('frame_time')
-        self.snapshot = data.get('snapshot')
-        self.label = data.get('label')
-        self.sub_label = data.get('sub_label', [])
-        self.top_score = data.get('top_score')
-        self.start_time = data.get('start_time')
-        self.end_time = data.get('end_time')
-        self.score = data.get('score', -1)
-        self.box = data.get('box', [])
-        self.area = data.get('area')
-        self.ratio = data.get('ratio')
-        self.region = data.get('region', [])
-        self.stationary = data.get('stationary')
-        self.motionless_count = data.get('motionless_count')
-        self.position_changes = data.get('position_changes')
-        self.current_zones = data.get('current_zones', [])
-        self.entered_zones = data.get('entered_zones', [])
-        self.has_clip = data.get('has_clip', False)
-        self.has_snapshot = data.get('has_snapshot', False)
-    
-    @property
-    def duration(self):
-        started = datetime.fromtimestamp(self.start_time)
-        delta = datetime.now() - started
-        return str(delta)
-    
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'camera': self.camera,
-            'frame_time': self.frame_time,
-            'snapshot': self.snapshot,
-            'label': self.label,
-            'sub_label': self.sub_label,
-            'top_score': self.top_score,
-            'start_time': self.start_time,
-            'end_time': self.end_time,
-            'score': self.score,
-            'box': self.box,
-            'area': self.area,
-            'ratio': self.ratio,
-            'region': self.region,
-            'stationary': self.stationary,
-            'motionless_count': self.motionless_count,
-            'position_changes': self.position_changes,
-            'current_zones': self.current_zones,
-            'entered_zones': self.entered_zones,
-            'has_clip': self.has_clip,
-            'has_snapshot': self.has_snapshot
-        }
 
-    def __repr__(self):
-        return f"Event({json.dumps(self.to_dict(), indent=2)})"
-        
 class Notification:
-    def __init__(self, event: EventData):
+    def __init__(self, event_id, score, label, sub_label, camera_name, zones):
         self.message = None
         self.image = None
         self.video = None
         
-        self.group = f"frigate-{event.camera.replace("_", "-")}"
-        self.event_id = event.id
-        self.score = event.score
-        self.label = event.label
-        self.sub_label = event.sub_label
-        self.camera =event.camera
-        self.zones = event.current_zones
+        self.group = f"frigate-{camera_name.replace("_", "-")}"
+        self.event_id = event_id
+        self.score = score
+        self.label = label
+        self.sub_label = sub_label
+        self.camera = camera_name
+        self.zones = zones
         self.timestamp = datetime.now()
+
+    @staticmethod
+    def create(event: BaseEventData):
+        if isinstance(event, DetectEventData):
+            return Notification.from_event(event)
+        elif isinstance(event, ReviewEventData):
+            return Notification.from_detection(event)
+        return None
+
+    @staticmethod
+    def from_event(event: DetectEventData):
+        return Notification(event.id, event.score, event.label, event.sub_label, event.camera, event.current_zones)
+
+    @staticmethod
+    def from_detection(event: ReviewEventData):
+        max_score = 1.0
+        labels = ",".join(event.data.objects)
+        sub_labels = ",".join(event.data.sub_labels)
+        zones = ",".join(event.data.zones)
+        return Notification(event.id, max_score, labels, sub_labels, event.camera, zones)
+
     # Method to convert the Notification object to a dictionary
     def to_dict(self):
         return {

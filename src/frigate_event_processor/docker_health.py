@@ -3,6 +3,7 @@ from threading import Thread
 from flask import Flask, jsonify
 from abc import ABC, abstractmethod
 import os
+from werkzeug.serving import make_server
 
 
 logger = logging.getLogger(__name__)
@@ -30,33 +31,64 @@ class DockerHealthCheck:
         # self.__add_routes()
         self.enabled = DockerHealthCheck.health_check_enabled()
         self.host = os.getenv('DOCKER_HEALTH_HOST', '127.0.0.1')
-        self.port = os.getenv('DOCKER_HEALTH_PORT', 54123)
-        self.__flask_thread = None
+        self.port = int(os.getenv('DOCKER_HEALTH_PORT', '54123'))
+        self.__server = None
+        self.__thread = None
         self.__add_routes()
 
-    def run_flask(self):
-        # Set Flask logger to only show errors
-        log = logging.getLogger('werkzeug')
-        log.setLevel(logging.ERROR)
-        app.run(host=self.host, port=self.port)
-
     def start(self):
-        self.__flask_thread = Thread(target=self.run_flask, daemon=True)
-        self.__flask_thread.start()
+        if not self.enabled:
+            return
+
+        if self.__server is not None:
+            logger.debug("Docker health server already running")
+            return
+
+        # Build a WSGI server we can shut down later
+        self.__server = make_server(self.host, self.port, app)
+
+        # Keep Werkzeug's request logs quiet
+        logging.getLogger('werkzeug').setLevel(logging.ERROR)
+
+        # Serve in a background thread
+        self.__thread = Thread(target=self.__server.serve_forever, daemon=True)
+        self.__thread.start()
+        logger.info(f"Docker health server started on {self.host}:{self.port}")
 
     def stop(self):
-        self.__flask_thread.stop()
+        if not self.enabled:
+            return
+
+        if self.__server is None:
+            logger.debug("Docker health server is not running")
+            return
+
+        try:
+            self.__server.shutdown()
+            if self.__thread is not None:
+                self.__thread.join(timeout=2)
+            logger.info("Docker health server stopped")
+        finally:
+            self.__server = None
+            self.__thread = None
 
     def __add_routes(self):
         """
         Add the Flask route for health checks.
         """
+        if not self.enabled:
+            return
+
         app.add_url_rule('/health', 'health_check', self.health_check, methods=['GET'])
 
     def health_check(self):
         """
         Flask route to check the application's health status.
         """
+
+        if not self.enabled:
+            return
+
         try:
             is_healthy = self.__reference.is_healthy()
             if is_healthy:
