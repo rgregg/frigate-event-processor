@@ -1,0 +1,100 @@
+mqtt:
+  host: homeassistant.lan
+  port: 1883
+  listen_topic: frigate/events        # Topic to listen for events on, published by Frigate
+  alert_topic: alerts/camera_system   # Topic where qualified alerts are published for notifications
+  retain: true                        # Retain messages on the MQTT broker
+
+frigate:
+  host: homeassistant.lan             # Address for the Frigate API, use the unauthenticated address
+  port: 5000
+  ssl: false
+
+# record events into MQTT sensors that can be displayed in various dashboards or with Home Assistant
+event_tracking:
+  enabled: true                       # Enable reporting event details to MQTT
+  mqtt_topic: frigate_events/cameras  # Topic to publish event details on
+  home_assistant: true                # Enable Home Assistant discovery for camera events
+  discovery_base_topic: homeassistant # Base topic for Home Assistant discovery
+  home_assistant_url: http://homeassistant.lan   # Used for generating image URLs that load using the Frigate API integration
+
+
+alerts:
+  - camera: yard
+    labels:
+      - person
+  - camera: front_door
+    labels:
+      - person
+      - package
+      - car
+      - fedex
+      - amazon
+      - ups
+      - package
+    zones:
+      ignore:
+        - zone: parked_cars
+          labels: ["car"]  # ignore the label car in the parked_cars zone
+#      require:
+#        - zone: driveway
+#          labels: ["*"]
+
+  - camera: backyard
+    labels:
+      - person
+      - package
+      - car
+
+alert_rules:
+  # Minimum duration of time an event is active before a notification is fired, 0 to disable
+  # Note this will delay processing of all alert notifications for at least this duration of
+  # time to make sure the event doesn't end first. Recommend to keep this to a low value to
+  # ensure timely delivery of alerts
+  min_event_duration: 1.1s
+  
+  # maximum time since the event was created that will still generate an alert (this can be used
+  # to prevent alerts for parked cars and other items that are detected for a long time)
+  max_event_duration: 1m
+
+  # Require that a snapshot is avaialble before a notificaiton is fired
+  snapshot: false
+
+  # Require that a video is avaialble before a notification is fired
+  video: false
+
+  cooldown:
+    # Amount of time that must elapse before a notification is fired again for the same camera
+    camera: 0s  # 30s or 5m or 1h
+
+    # Amount of time that must elapse before a notification is fired again for the same label on a camera
+    label: 1m
+
+    # Camera groups cooldown - prevents notifications from cameras in the group until the timer expires.
+    group: 1m
+
+# Define camera groups where cameras overlap, reducing notifications with a group cooldown timer
+camera groups:
+  carport:
+    - carport
+    - carport_side
+  porch:
+    - porch
+    - front_steps
+
+logging:
+  level: INFO     # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  path: "./logs/frigate-processor.log"
+  max_keep: 10    # number of log files to keep
+  mqtt_debug: false  # Enable logging of all MQTT messages to logs/mqtt_debug.log
+
+ai:
+  enabled: true   # enable AI processing with Google Gemini API
+  api_key: your-api-key-here
+  ai_model: gemini-1.5-flash
+  prompt: >
+        Very briefly describe what you see in this image from my security camera. Your
+        message needs to be short to fit in a phone notification. Don't describe
+        stationary objects or buildings. Focus on people, animals, or actions.
+        Start your response with the name of the camera.
+  inject_detection: true    # inject the camera name and labels into the prompt
