@@ -62,7 +62,7 @@ class BaseVisionProcessor(ABC):
     @staticmethod
     def get_vision_engine(app_config: AppConfig) -> 'BaseVisionProcessor':
         """Returns a vision processor based on the engine."""
-        engine = app_config.ai.enabled
+        engine = app_config.ai.engine
         if engine == 'ollama':
             logger.info("Using Olama Vision processor.")
             from .ollama_vision_processor import OlamaVision
