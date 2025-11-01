@@ -142,12 +142,18 @@ class MqttEventReceiver(BaseHealthCheck):
                         self.processor.log_info_event_id(command[2:])
                     elif command.lower().startswith("n "):
                         event = self.processor.get_ongoing_event(command[2:])
+                        if event is None:
+                            logger.warning("Couldn't find that event.")
+                            continue
                         message = self.processor.generate_notification(event)
                         output = json.dumps(message.to_dict(), indent=2)
                         logger.info("Notification:\n%s", output)
                     elif command.lower().startswith("t "):
                         event = self.processor.get_ongoing_event(command[2:])
-                        url = self.processor.get_snapshot_url(event)
+                        if event is None:
+                            logger.warning("Couldn't find that event.")
+                            continue
+                        url = event.get_notification_image(self.config)
                         logger.info("Snapshot URL: %s", url)
                     elif command.lower() == "c":
                         logger.info("Configuration: %s", self.config.__repr__())

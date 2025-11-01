@@ -20,6 +20,7 @@ event_tracking:
   home_assistant: true                # Enable Home Assistant discovery for camera events
   discovery_base_topic: homeassistant # Base topic for Home Assistant discovery
   home_assistant_url: http://homeassistant.lan   # Used for generating image URLs that load using the Frigate API integration
+  image_source: ha | frigate         # Deteremine where notification images are loaded from (ha or frigate)
 
 notifications:
   - camera: yard

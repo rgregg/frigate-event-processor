@@ -104,6 +104,7 @@ class FrigateConfig(BaseConfig):
         self.host = None
         self.port = None
         self.use_ssl = None
+        self.public_host_url = None
         self.load_default()
 
     def load_default(self):
@@ -114,6 +115,7 @@ class FrigateConfig(BaseConfig):
         self.host = data.get('host') or "localhost"
         self.port = data.get('port') or 5000
         self.use_ssl = data.get('ssl') or False
+        self.public_host_url = data.get('public_host_url') or None
 
     def validate(self):
         if not self.host:
@@ -126,6 +128,11 @@ class FrigateConfig(BaseConfig):
         """Get the base URL for the Frigate API"""
         protocol = "https" if self.use_ssl else "http"
         return f"{protocol}://{self.host}:{self.port}/api"
+    
+    @property
+    def public_base_url(self):
+        protocol = "https" if self.use_ssl else "http"
+        return self.public_host_url or f"{protocol}://{self.host}:{self.port}"
     
     def __repr__(self):
         return f"Frigate(url={self.api_base_url})"
@@ -279,6 +286,7 @@ class EventTrackingConfig(BaseConfig):
         self.home_assistant = None
         self.discovery_base_topic = None
         self.home_assistant_url = None
+        self.image_source = None
 
     def load_default(self):
         self.load_json({})
@@ -290,6 +298,7 @@ class EventTrackingConfig(BaseConfig):
         self.home_assistant = data.get('home_assistant') or False
         self.discovery_base_topic = data.get('discovery_base_topic') or "homeassistant"
         self.home_assistant_url = data.get('home_assistant_url')
+        self.image_source = data.get('image_source') or "frigate"
 
     def validate(self):
         if self.enabled and not self.mqtt_topic:
@@ -298,6 +307,10 @@ class EventTrackingConfig(BaseConfig):
             raise ValueError("discover_base_topic is required if home_assistant is True")
         if self.home_assistant and not self.home_assistant_url:
             raise ValueError("home_assistant_url is required if home_assistant is True")
+        if self.image_source == "ha" and not self.home_assistant_url:
+            raise ValueError("image_source: ha requires home_assistant_url to be defined")
+        if not self.image_source == "ha" and not self.image_source == "frigate":
+            raise ValueError("image_source must be either ha or frigate")
 
     def __repr__(self):
         return (f"EventTracking(enabled={self.enabled}, mqtt_topic={self.mqtt_topic}, "

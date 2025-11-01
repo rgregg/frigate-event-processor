@@ -4,7 +4,7 @@ from typing import Iterable
 import logging
 import json
 from abc import ABC, abstractmethod
-from .app_configuration import AlertRulesConfig
+from .app_configuration import AlertRulesConfig, AppConfig
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +45,10 @@ class BaseEventData(ABC):
     @abstractmethod
     def get_video_urls(self, base_url: str) -> Iterable[str]:
         pass
+
+    @abstractmethod
+    def first_event_id(self) -> str | None:
+        pass
     
     def to_dict(self):
         return self.__dict__
@@ -66,6 +70,26 @@ class BaseEventData(ABC):
         zones_changed = set(self.get_zones()) != set(other.get_zones())
         return any(labels_changed, sub_labels_changed, zones_changed)
 
+    def get_notification_image(self, config: AppConfig) -> str | None:
+        # gets the public url for a notification for this event
+        event_id = self.first_event_id()
+        if config.event_tracking.image_source == "ha":
+            return f"/api/frigate/notifications/{event_id}/thumbnail.jpg"
+        elif config.event_tracking.image_source == "frigate":
+            return f"{config.frigate.public_base_url}/api/events/{event_id}/thumbnail.jpg"
+        return None
+        
+    def get_notification_video(self, config: AppConfig) -> str | None:
+        event_id = self.first_event_id()
+        if config.event_tracking.image_source == "ha":
+            return f"{config.event_tracking.home_assistant_url}/api/frigate/notifications/{event_id}/clip.mp4"
+        elif config.event_tracking.image_source == "frigate":
+            return f"{config.frigate.public_base_url}/api/events/{event_id}/clip.mp4"
+        return None
+    
+    def get_action_url(self, config: AppConfig) -> str | None:
+        pass
+
 class ReviewEventData (BaseEventData):
     def __init__(self, data):
         super().__init__(data)
@@ -83,6 +107,9 @@ class ReviewEventData (BaseEventData):
     def get_video_urls(self, base_url):
         return [f"{base_url}/events/{id}/clip.mp4" for id in self.data.detections]
     
+    def first_event_id(self) -> str | None:
+        return self.data.detections[0]
+    
     def get_labels(self):
         return self.data.objects
     
@@ -96,6 +123,10 @@ class ReviewEventData (BaseEventData):
         if config.minimum_trigger_type == 'detection':
             return self.severity == config.minimum_trigger_type
         return False
+    
+    def get_action_url(self, config: AppConfig) -> str | None:
+        return f"{config.frigate.public_base_url}/review?id=1761935763.900285-uyv0f1"
+        pass
 
 class AlertOrDetectionData:
     def __init__(self, data):
@@ -135,6 +166,9 @@ class DetectEventData (BaseEventData):
     def get_video_urls(self, base_url):
         return [base_url + f"/events/{self.id}/clip.mp4"]
     
+    def first_event_id(self) -> str | None:
+        return self.id
+    
     def was_significant_change(self, other: 'BaseEventData') -> bool:
         # Only compare like-with-like
         if not isinstance(other, type(self)):
@@ -149,3 +183,8 @@ class DetectEventData (BaseEventData):
         super_value = super().was_significant_change(other)
 
         return any((entered_zones_changed, clip_became_true, snap_became_true, super_value))
+    
+    def get_notification_image(self, config: AppConfig) -> str | None:
+        if self.has_snapshot:
+            return self.get_snapshot_urls(config.frigate.api_base_url)[0]
+        return None

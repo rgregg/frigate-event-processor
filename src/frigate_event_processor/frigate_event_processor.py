@@ -20,7 +20,7 @@ class FrigateEventProcessor:
     """Main class for processing events from Frigate via MQTT"""
 
     def __init__(self, config: AppConfig, alert_publish_func):
-        self.ongoing_events = dict()
+        self.ongoing_events = dict[str, BaseEventData]()
         self.config = config
         self.configure_logging()
         self.cameras = {alert.camera: alert for alert in self.config.alerts}
@@ -188,7 +188,7 @@ class FrigateEventProcessor:
             return
         self.publish_event_to_mqtt(event)
 
-    def get_ongoing_event(self, event_id):
+    def get_ongoing_event(self, event_id) -> BaseEventData:
         """ Get the ongoing event by ID """
         return self.ongoing_events.get(event_id)
 
@@ -391,8 +391,8 @@ class FrigateEventProcessor:
             logger.debug("Event %s: Generating default message", event.id)
             notification.message = f"{detection} was detected at {location}"
 
-        notification.image = first_or_none(event.get_thumbnail_urls(self.config.frigate.api_base_url))
-        notification.video = first_or_none(event.get_video_urls(self.config.frigate.api_base_url))
+        notification.image = event.get_notification_image(self.config)
+        notification.video = event.get_notification_video(self.config)
         return notification
     
     def camera_and_label_key(self, event):
@@ -475,10 +475,10 @@ class FrigateEventProcessor:
     def print_ongoing_events(self):
         """ Print a table of ongoing events to the console """
         table = PrettyTable()
-        table.field_names = ["ID", "Camera", "Zones", "Label", "SubLabel", "Score", "Duration"]
+        table.field_names = ["ID", "Camera", "Zones", "Label", "SubLabel", "Duration"]
 
         for _index, (key, event) in enumerate(self.ongoing_events.items()):
-            table.add_row([key, event.camera, ", ".join(event.current_zones), event.label, event.sub_label, "{:.2f}".format(event.score), event.duration])
+            table.add_row([key, event.camera, ", ".join(event.get_zones()), ", ".join(event.get_labels()), ",".join(event.get_sub_labels()), event.duration])
 
         logger.info("\n%s", str(table))
                           
