@@ -54,8 +54,11 @@ class FrigateEventProcessor:
             logger.error("An unexpected error occured: %s\nReview: %s", ex, json.dumps(review, indent=2))
             raise
 
-    def handle_event_data(self, type, before, after):
+    def handle_event_data(self, type:str, before:BaseEventData, after:BaseEventData):
         if type == "new" or type == "update":
+            if after.should_ignore_event(self.config.alert_rules):
+                logger.info("Skipping event due to notification_rules filtering.")
+                return
             self.process_event_update(after, type.upper())
         elif type == "end":
             self.process_event_end(before)
@@ -76,6 +79,7 @@ class FrigateEventProcessor:
             logger.info("Processing event data...")
         elif isinstance(event, ReviewEventData):
             logger.info("Processing detection data...")
+            
         else:
             logger.warning("Unexpected event data format: %s. Skipped.", type(event))
             return
@@ -85,7 +89,7 @@ class FrigateEventProcessor:
             self.queue_event_processing(event)
         else:
             previous = self.ongoing_events.get(event.id)
-            self.process_event_for_alert(event, previous)
+            self.process_event_for_notification(event, previous)
 
     def should_queue_event(self, event):
         """ Check to see if an event needs to be queued bsased on the start_time of the event """
@@ -127,10 +131,10 @@ class FrigateEventProcessor:
         del self.event_processing_queue[event_queue.id]
         previous = None
         for event in event_queue.queue:
-            self.process_event_for_alert(event, previous)
+            self.process_event_for_notification(event, previous)
             previous = event
 
-    def process_event_for_alert(self, event:BaseEventData, previous:BaseEventData):
+    def process_event_for_notification(self, event:BaseEventData, previous:BaseEventData):
         """
         Evalautes an event to determine if it should be elevated to an alert
         """
@@ -145,14 +149,14 @@ class FrigateEventProcessor:
         """
         Publish an alert to the MQTT alerting topic
         """
-        alert = self.generate_notification(event)
-        self.store_cooldown_for_event(event, alert)
-        alert_payload = json.dumps(alert.to_dict())
-        logger.info("ALERT: %s", alert_payload)
-        self.alert_publish_func(self.config.mqtt.alert_topic + "/alert", alert_payload)
+        notification = self.generate_notification(event)
+        self.store_cooldown_for_event(event, notification)
+        notification_payload = json.dumps(notification.to_dict())
+        logger.info("ALERT: %s", notification_payload)
+        self.alert_publish_func(self.config.mqtt.alert_topic + "/alert", notification_payload)
 
         if self.config.event_tracking.enabled:
-            self.publish_event_tracking(alert)
+            self.publish_event_tracking(notification)
 
     def store_cooldown_for_event(self, event, alert):
         """ Store the alert in the notification history for cooldown purposes """
@@ -196,10 +200,10 @@ class FrigateEventProcessor:
             return
         logger.info("Event %s: %s", event_id, event)
     
-    def process_event_end(self, data):
+    def process_event_end(self, data:BaseEventData):
         """ Indicates that the event has ended and the object
             is no longer detected in the video """
-        event_id = data.get('id')
+        event_id = data.id
         logger.info("END: Event %s ended", event_id)
 
         existing_queue = self.event_processing_queue.get(event_id)
@@ -213,7 +217,7 @@ class FrigateEventProcessor:
         except KeyError:
             pass
 
-    def should_publish_event(self, before, after):
+    def should_publish_event(self, before:BaseEventData, after:BaseEventData):
         """
         Compare events to see if we should create a new notification for this event
         """
@@ -246,29 +250,31 @@ class FrigateEventProcessor:
             return False
 
         # is the alert for an expected object type (label)
-        if not after.label in alert_config.labels:
-            logger.info("Event %s: configuration missing for camera %s and label %s", after.id, after.camera, after.label)
+        common_label = set(after.get_labels()) & set(alert_config.labels)
+        if not common_label:
+            logger.info("Event %s: configuration missing for camera %s and label %s", after.id, after.camera, after.get_labels())
             return False
         
         # is the event including a required zone?
         required_zones = alert_config.zones.require_zones
-        if not ZonesConfig.check_zone_match(required_zones, after.current_zones, after.label, True):
-            logger.info("Event %s: not in a required zone (camera=%s, label=%s, current_zones=%s)", after.id, after.camera, after.label, after.current_zones)
+        if not ZonesConfig.check_zone_match(required_zones, after.get_zones(), after.get_labels(), True):
+            logger.info("Event %s: not in a required zone (camera=%s, label=%s, current_zones=%s)", after.id, after.camera, after.get_labels(), after.get_zones())
             return False
         
         # is the event in an ignored zone?
         ignored_zones = alert_config.zones.ignore_zones
-        if ZonesConfig.check_zone_match(ignored_zones, after.current_zones, after.label, False):
-            logger.info("Event %s: in ignored zone (camera=%s, label=%s, current_zones=%s)", after.id, after.camera, after.label, after.current_zones)
+        if ZonesConfig.check_zone_match(ignored_zones, after.get_zones(), after.get_labels(), False):
+            logger.info("Event %s: in ignored zone (camera=%s, label=%s, current_zones=%s)", after.id, after.camera, after.get_labels(), after.get_zones())
             return False
         
         # does the event have required parameters
-        if self.config.alert_rules.require_snapshot and not after.has_snapshot:
-            logger.info("Event %s: no snapshot", after.id)
-            return False
-        if self.config.alert_rules.require_video and not after.has_video:
-            logger.info("Event %s: no video clip", after.id)
-            return False
+        if isinstance(after, DetectEventData):
+            if self.config.alert_rules.require_snapshot and not after.has_snapshot:
+                logger.info("Event %s: no snapshot", after.id)
+                return False
+            if self.config.alert_rules.require_video and not after.has_video:
+                logger.info("Event %s: no video clip", after.id)
+                return False
         
         # check to see if we're still in the event cooldown for the camera (always do this last)
         if not self.is_event_past_cooldown(after):
@@ -277,22 +283,26 @@ class FrigateEventProcessor:
                 
         return True
 
-    def is_event_significant(self, before, after):
+    def is_event_significant(self, before:BaseEventData, after:BaseEventData):
         is_significant = True
         reason = ""
         if before is not None:
-            if before.label != after.label:
+            if before.get_labels() != after.get_labels():
                 reason = "label"
-            elif before.sub_label != after.sub_label:
+            elif before.get_sub_labels() != after.get_sub_labels():
                 reason = "sub_label"
-            elif before.current_zones != after.current_zones:
+            elif before.get_zones() != after.get_zones():
                 reason = "current_zones"
-            elif before.entered_zones != after.entered_zones:
-                reason = "entered_zones"
-            elif before.has_clip != after.has_clip and bool(after.has_clip):
-                reason = "has_clip"
-            elif before.has_snapshot != after.has_snapshot and bool(after.has_snapshot):
-                reason = "has_snapshot"
+            elif isinstance(after, DetectEventData):
+                if before.entered_zones != after.entered_zones:
+                    reason = "entered_zones"
+                elif before.has_clip != after.has_clip and bool(after.has_clip):
+                    reason = "has_clip"
+                elif before.has_snapshot != after.has_snapshot and bool(after.has_snapshot):
+                    reason = "has_snapshot"
+                else:
+                    reason = "end of statements"
+                    is_significant = False
             else:
                 reason = "end of statements"
                 is_significant = False
@@ -301,7 +311,7 @@ class FrigateEventProcessor:
         return is_significant,reason
     
     
-    def is_event_past_cooldown(self, event):
+    def is_event_past_cooldown(self, event:BaseEventData):
         """ Check to see if this event meets the required cooldown time in the configuration """
         cooldown = self.config.alert_rules.cooldown
 
@@ -355,7 +365,7 @@ class FrigateEventProcessor:
         camera = event.camera.replace("_", " ").title()
         current_zones = event.get_zones()
         if current_zones is not None and len(current_zones) > 0:
-            zones = ", ".join(event.current_zones).replace("_", " ").title()
+            zones = ", ".join(current_zones).replace("_", " ").title()
             return f"{camera} [{zones}]"
         else:
             return camera
@@ -387,7 +397,7 @@ class FrigateEventProcessor:
     
     def camera_and_label_key(self, event):
         """ Generate a unique key for this event based on the camera and label """
-        return f"{event.camera}__{event.label}"
+        return f"{event.camera}__{event.get_labels()}"
 
     def generate_detection_string(self, event:BaseEventData):
         """ Generate the detection string for this event """

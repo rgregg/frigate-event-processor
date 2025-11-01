@@ -178,7 +178,7 @@ class ZonesConfig:
         return f"Zones(ignored={self.ignore_zones}, required={self.require_zones})"
     
     @staticmethod 
-    def check_zone_match(zone_configs: list[ZoneAndLabelsConfig], active_zones: list[str], label: str, default: bool) -> bool:
+    def check_zone_match(zone_configs: list[ZoneAndLabelsConfig], active_zones: list[str], labels: list[str], default: bool) -> bool:
         """Check if the zone matches the active zones and labels"""
         if zone_configs is None or len(zone_configs) == 0:
             return default
@@ -187,8 +187,10 @@ class ZonesConfig:
             # Check if the zone is in active_zones and the label is in the labels of the object
             if config.zone in active_zones:
                 # if the label doesn't exist, the zone is enough - otherwise, if the rule has a * or matches the label
-                if label is None or "*" in config.labels or label in config.labels:
+                if  "*" in config.labels or labels is None:
                     return True
+                label_match = set(labels) & set(config.labels)
+                return len(label_match) > 0
         return False
 
     @staticmethod
@@ -238,6 +240,7 @@ class AlertRulesConfig(BaseConfig):
         self.require_snapshot = None
         self.require_video = None
         self.cooldown = CooldownConfig()
+        self.minimum_trigger_type = None
         self.load_default()
 
     def load_default(self):
@@ -249,6 +252,7 @@ class AlertRulesConfig(BaseConfig):
         self.maximum_duration_seconds = ParserUtilities.parse_duration(data.get('max_event_duration'))
         self.require_snapshot = data.get('snapshot') or False
         self.require_video = data.get('video') or False
+        self.minimum_trigger_type = data.get('minimum_trigger_type') or 'alert'
 
         cooldown = data.get('cooldown')
         if cooldown is not None:
@@ -259,7 +263,10 @@ class AlertRulesConfig(BaseConfig):
             self.cooldown.load_default()
 
     def validate(self):
-        pass
+        if self.minimum_trigger_type == "alert" or self.minimum_trigger_type == "detection":
+            pass
+        else:
+            raise ValueError("minimum_trigger_type must be 'alert' or 'detection'")
 
     def __repr__(self):
         return f"AlertRules(min_dur={self.minimum_duration_seconds}s, snapshots={self.require_snapshot}, video={self.require_video}, cooldown={self.cooldown})"
@@ -450,7 +457,7 @@ class AppConfig(BaseAppConfig, BaseConfig):
 
     def __load_rules_config(self, data):
         """Load alerting rules"""
-        rules = data.get('alert_rules')
+        rules = data.get('notification_rules') or data.get('alert_rules')
         if rules is not None:
             self.alert_rules.load_json(rules)
         else:
@@ -458,7 +465,7 @@ class AppConfig(BaseAppConfig, BaseConfig):
 
     def __load_alerts_config(self, data):
         """Load alerts configuration"""
-        alerts = data.get('alerts')
+        alerts = data.get('notifications') or data.get('alerts')    # Backwards compatible for old config
         self.alerts.clear()
         if alerts is None:
             return

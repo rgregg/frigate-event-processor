@@ -4,6 +4,7 @@ from typing import Iterable
 import logging
 import json
 from abc import ABC, abstractmethod
+from .app_configuration import AlertRulesConfig
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,20 @@ class BaseEventData(ABC):
 
     def __repr__(self):
         return f"Event({json.dumps(self.to_dict(), indent=2)})"
+    
+    def should_ignore_event(self, config: AlertRulesConfig) -> bool:
+        return False
+    
+    def was_significant_change(self, other: 'BaseEventData') -> bool:
+        # Only compare like-with-like
+        if not isinstance(other, type(self)):
+            raise ValueError("Can't compare different types of events")
+
+        # Normalize zones so order/dupes don't matter
+        labels_changed = set(self.get_labels()) != set(other.get_labels())
+        sub_labels_changed = set(self.get_sub_labels()) != set(other.get_sub_labels())
+        zones_changed = set(self.get_zones()) != set(other.get_zones())
+        return any(labels_changed, sub_labels_changed, zones_changed)
 
 class ReviewEventData (BaseEventData):
     def __init__(self, data):
@@ -76,6 +91,11 @@ class ReviewEventData (BaseEventData):
     
     def get_zones(self):
         return self.data.zones
+    
+    def should_ignore_event(self, config: AlertRulesConfig) -> bool:
+        if config.minimum_trigger_type == 'detection':
+            return self.severity == config.minimum_trigger_type
+        return False
 
 class AlertOrDetectionData:
     def __init__(self, data):
@@ -114,3 +134,18 @@ class DetectEventData (BaseEventData):
     
     def get_video_urls(self, base_url):
         return [base_url + f"/events/{self.id}/clip.mp4"]
+    
+    def was_significant_change(self, other: 'BaseEventData') -> bool:
+        # Only compare like-with-like
+        if not isinstance(other, type(self)):
+            raise ValueError("Can't compare different types of events")
+        
+        # Normalize zones so order/dupes don't matter
+        entered_zones_changed = set(self.entered_zones) != set(other.entered_zones)
+
+        # If these can be tri-state (None/False/True), be explicit about the transition
+        clip_became_true = (not bool(self.has_clip)) and bool(other.has_clip)
+        snap_became_true = (not bool(self.has_snapshot)) and bool(other.has_snapshot)
+        super_value = super().was_significant_change(other)
+
+        return any((entered_zones_changed, clip_became_true, snap_became_true, super_value))

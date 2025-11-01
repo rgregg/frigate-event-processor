@@ -21,7 +21,7 @@ event_tracking:
   discovery_base_topic: homeassistant # Base topic for Home Assistant discovery
   home_assistant_url: http://homeassistant.lan   # Used for generating image URLs that load using the Frigate API integration
 
-alerts:
+notifications:
   - camera: yard
     labels:
       - person
@@ -48,7 +48,7 @@ alerts:
       - package
       - car
 
-alert_rules:
+notification_rules:
   # Minimum duration of time an event is active before a notification is fired, 0 to disable
   # Note this will delay processing of all alert notifications for at least this duration of
   # time to make sure the event doesn't end first. Recommend to keep this to a low value to
@@ -59,10 +59,10 @@ alert_rules:
   # to prevent alerts for parked cars and other items that are detected for a long time)
   max_event_duration: 1m
 
-  # Require that a snapshot is avaialble before a notificaiton is fired
+  # Require that a snapshot is avaialble before a notificaiton is fired (doesn't work with reviews)
   snapshot: false
 
-  # Require that a video is avaialble before a notification is fired
+  # Require that a video is avaialble before a notification is fired (doesn't work with reviews)
   video: false
 
   cooldown:
@@ -74,6 +74,9 @@ alert_rules:
 
     # Camera groups cooldown - prevents notifications from cameras in the group until the timer expires.
     group: 1m
+
+  # Allow filtering based on alerts or detections defined in Frigate.
+  minimum_trigger_type: alert | detection
 
 # Define camera groups where cameras overlap, reducing notifications with a group cooldown timer
 camera groups:
