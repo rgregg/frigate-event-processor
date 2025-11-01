@@ -54,7 +54,7 @@ class BaseVisionProcessor(ABC):
         snapshot_urls = event.get_snapshot_urls(self.app_config.frigate.api_base_url)
         image_data_base64 = []
         for url in snapshot_urls:
-            image_data = super()._fetch_image_base64(url)
+            image_data = self._fetch_image_base64(url)
             if image_data is not None:
                 image_data_base64.append(image_data)
         return image_data_base64
