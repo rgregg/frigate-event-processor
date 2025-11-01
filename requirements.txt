@@ -5,4 +5,4 @@ prettytable==3.11.0
 wcwidth==0.2.13
 google-generativeai==0.8.3
 httpx==0.28.1
-Flask==3.1.0
+Flask==3.1.1
