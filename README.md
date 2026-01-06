@@ -12,9 +12,10 @@ to your device. You can filter based on multiple criteria, including:
 * Minimum event duration (filter out events that last less than X seconds)
 * Maximum event duration (filter out events which started more than X seconds ago)
 * Snapshot or Video
+* Camera groups to avoid duplicate alerts when views overlap
 
-You can also easily implement a cooldown feature for a camera or label, to ensure that you won't
-receive repeated alerts for the same detection within a small period of time.
+You can also easily implement a cooldown feature for a camera, label, or a group of cameras so a
+single person walking through overlapping views will only trigger one notification.
 
 
 ## Example Configuration File
@@ -76,6 +77,15 @@ alert_rules:
 
     # Amount of time that must elapse before a notification is fired again for the same label on a camera
     label: 1m
+
+# Define camera groups where cameras overlap and share a cooldown timer
+groups:
+  porch:
+    - front_door
+    - front_steps
+  yard:
+    - yard
+    - backyard
 
 object_tracking:
   # enable tracking location of labels on video frames to identify stationary objects and supress alerts
