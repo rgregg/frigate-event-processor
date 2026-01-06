@@ -104,7 +104,8 @@ class AlertConfig:
     def load_json(self, data):
         """Load alert configuration from a JSON object"""
         self.camera = data.get('camera')
-        self.enabled = data.get('enabled') or True
+        # Respect an explicit enabled flag; default to True only if unspecified
+        self.enabled = data.get('enabled') if 'enabled' in data else True
         self.labels = data.get('labels') or []
 
         zones = data.get('zones')
@@ -271,9 +272,7 @@ class CameraGroupsConfig:
         """Load the camera groups from a JSON object"""
         self.groups.clear()
         for name, cameras in data.items():
-            new_group = CameraGroupConfig()
-            new_group.name = name
-            new_group.cameras = cameras
+            new_group = CameraGroupConfig(name, cameras)
             self.groups.append(new_group)
 
     def get_camera_group(self, camera_name: str):
@@ -407,7 +406,8 @@ class AppConfig(BaseAppConfig):
 
     def __load_camera_groups(self, data):
         """Load camera groups"""
-        groups = data.get('camera_groups')
+        # Support both legacy "camera_groups" and current "groups" keys
+        groups = data.get('camera_groups') or data.get('groups')
         if groups is not None:
             self.camera_groups.load_json(groups)
 

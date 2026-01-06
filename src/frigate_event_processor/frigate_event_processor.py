@@ -312,7 +312,7 @@ class FrigateEventProcessor:
         # Check group cooldown
         camera_group = self.config.camera_groups.get_camera_group(event.camera)
         if camera_group is not None:
-            group_notification = self.camera_notification_history.get(camera_group)
+            group_notification = self.group_notification_history.get(camera_group)
             if not is_past_cooldown(group_notification, cooldown.group_duration_seconds):
                 logger.debug("Camera Group %s still in cooldown", camera_group)
                 return False
@@ -529,7 +529,7 @@ class Notification:
         self.image = None
         self.video = None
         
-        self.group = f"frigate-{event.camera.replace("_", "-")}"
+        self.group = f"frigate-{event.camera.replace('_', '-')}"
         self.event_id = event.id
         self.score = event.score
         self.label = event.label
