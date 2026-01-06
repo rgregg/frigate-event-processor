@@ -37,7 +37,7 @@ single person walking through overlapping views will only trigger one notificati
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -r requirements.txt
-python -m frigate_event_processor.main --config config.yaml
+PYTHONPATH=./src CONFIG_FILE=./config.yaml python -m frigate_event_processor.main
 
 # Or Docker Compose (see below for full service definition)
 docker compose up -d event-processor

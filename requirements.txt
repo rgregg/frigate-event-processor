@@ -6,4 +6,3 @@ wcwidth==0.2.14
 google-genai==0.6.0
 httpx==0.28.1
 Flask==3.1.2
-pytest=9.0.2
