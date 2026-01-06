@@ -1,22 +1,60 @@
 # Frigate Event Processor
 
+![Python Tests](https://github.com/rgregg/frigate-event-processor/actions/workflows/python-tests.yml/badge.svg)
+
 Frigate Event Processor (FEP) works with [Frigate](https://frigate.video) to monitor camera events and
-use rules to filter events which are then provided to an alerting system via MQTT.
+use rules to filter detections that are then provided to an alerting system via MQTT.
 
-FEP adds filtering capabiltiies so that every event that occurs doesn't generate a push notification
-to your device. You can filter based on multiple criteria, including:
+## Features
 
-* Camera
-* Label
-* Zone (required or ignored zones)
-* Minimum event duration (filter out events that last less than X seconds)
-* Maximum event duration (filter out events which started more than X seconds ago)
-* Snapshot or Video
-* Camera groups to avoid duplicate alerts when views overlap
+- Per-camera filtering by label, required/ignored zones, minimum/maximum duration, and media availability
+- Camera/label/group cooldown timers to prevent duplicate alerts from overlapping views
+- MQTT alerts ready for Home Assistant automations plus optional event tracking sensors
+- Optional AI-generated descriptions using Google Gemini or local Ollama models
+- Lightweight deployment with Docker or Python and automated CI for tests + Docker images
+
+### Filtering criteria
+
+- Camera
+- Label
+- Zone (required or ignored zones)
+- Minimum event duration (filter out events that last less than X seconds)
+- Maximum event duration (filter out events which started more than X seconds ago)
+- Snapshot or Video
+- Camera groups to avoid duplicate alerts when views overlap
 
 You can also easily implement a cooldown feature for a camera, label, or a group of cameras so a
 single person walking through overlapping views will only trigger one notification.
 
+## Quick Start
+
+1. Copy `config_example.yaml` to `config.yaml` and update the `mqtt` and `frigate` blocks.
+2. Customize the `alerts`, `alert_rules`, and `groups` sections for your cameras.
+3. Run FEP:
+
+```bash
+# Local Python
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -r requirements.txt
+python -m frigate_event_processor.main --config config.yaml
+
+# Or Docker Compose (see below for full service definition)
+docker compose up -d event-processor
+```
+
+4. Add the Home Assistant automation (below) to receive notifications.
+
+## Configuration Overview
+
+- **`mqtt`**: connection info, incoming `listen_topic`, and outgoing `alert_topic`.
+- **`frigate`**: host + protocol for snapshot/clip URLs.
+- **`alerts`**: per-camera rules (labels, enabled flag, zone require/ignore lists).
+- **`alert_rules`**: global min/max durations, `snapshot`/`video` requirements, and cooldown timers (`camera`, `label`, `group`).
+- **`groups`**: cameras that overlap and should share a cooldown.
+- **`event_tracking`**: optional MQTT sensors/Home Assistant discovery config.
+- **`ai`**: enable Gemini/Ollama processors for descriptive push notifications.
+- **`logging`**: log level, file path, and MQTT debug options.
 
 ## Example Configuration File
 
@@ -96,6 +134,19 @@ logging:
   path: "./logs/frigate-processor.log"
   max-keep: 10
 ```
+
+## Testing & Development
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -r requirements.txt
+pip install pytest
+python -m pytest
+```
+
+GitHub Actions automatically runs the pytest suite on every push or pull request to `main` and `dev`.
+A second workflow builds/pushes the Docker image after the tests succeed.
 
 ## Running with Docker Compose
 
@@ -177,3 +228,9 @@ mode: parallel
 max: 10
 
 ```
+
+## Contributing & Support
+
+Issues and pull requests are welcome! Feel free to open a ticket for feature requests or bugs. If you
+extend the configuration (new AI engines, MQTT integrations, etc.), please add or update tests so the
+GitHub Actions suite stays green. For questions, start a GitHub Discussion or file an issue.
