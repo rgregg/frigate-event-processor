@@ -1,8 +1,8 @@
 """Module to process images using Google Vision API."""
 
 import logging
-import base64
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import httpx
 
 from .vision_processor import BaseVisionProcessor
@@ -16,10 +16,9 @@ class GoogleVision(BaseVisionProcessor):
         self.config = ai_config
         if ai_config.enabled:
             logger.debug("Initializing Google AI with API_KEY: %s", ai_config.api_key)
-            genai.configure(api_key=ai_config.api_key)
             ai_model = ai_config.ai_model
             logger.debug("Specified model: %s", ai_model)
-            self.model = genai.GenerativeModel(model_name=ai_model)
+            self.client = genai.Client(api_key=ai_config.api_key)
             logger.info("Google AI model initialized: %s", ai_model)
 
     @property
@@ -50,11 +49,17 @@ class GoogleVision(BaseVisionProcessor):
 
         if self.config.inject_detection:
             prompt += f" Camera name was '{location}'. This image was labeled with '{detection}'."
-        
-        request = [{'mime_type': self.config.snapshot_format, 'data': base64.b64encode(image_data).decode('utf-8')}, prompt]
+
+        request = [
+            types.Part.from_bytes(data=image_data, mime_type=self.config.snapshot_format),
+            prompt,
+        ]
         logger.debug("API request parameters: %s", request)
         try:
-            response = self.model.generate_content(request)
+            response = self.client.models.generate_content(
+                model=self.config.ai_model,
+                contents=request,
+            )
             logger.debug("API response: %s", response)
             return response.text
         except Exception as exc:

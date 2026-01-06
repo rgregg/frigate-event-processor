@@ -80,6 +80,39 @@ except ModuleNotFoundError:  # pragma: no cover
     certifi_module.where = _where
     sys.modules['certifi'] = certifi_module
 
+try:  # pragma: no cover - dependency shim for google-genai
+    from google import genai  # type: ignore  # noqa: F401
+    from google.genai import types  # type: ignore  # noqa: F401
+except (ModuleNotFoundError, ImportError):  # pragma: no cover
+    google_module = types.ModuleType('google')
+    genai_module = types.ModuleType('google.genai')
+    types_module = types.ModuleType('google.genai.types')
+
+    class _Part:
+        @staticmethod
+        def from_bytes(data, mime_type):
+            return {'data': data, 'mime_type': mime_type}
+
+    class _Models:
+        def generate_content(self, *args, **kwargs):
+            class _Response:
+                text = ''
+
+            return _Response()
+
+    class _Client:
+        def __init__(self, *args, **kwargs):
+            self.models = _Models()
+
+    genai_module.Client = _Client
+    types_module.Part = _Part
+    genai_module.types = types_module
+    google_module.genai = genai_module
+
+    sys.modules['google'] = google_module
+    sys.modules['google.genai'] = genai_module
+    sys.modules['google.genai.types'] = types_module
+
 from frigate_event_processor.app_configuration import AlertConfig, AppConfig
 from frigate_event_processor.frigate_event_processor import (
     EventData,
